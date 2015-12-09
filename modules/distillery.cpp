@@ -53,7 +53,7 @@ void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
     //       scheme in spatial coordinates is implied, the rest is fully
     //       dilutet!
     size_t sink_size = 4*param.nb_ev;
-    if (!param.dilution_type_si[nbs][1].compare("B"))
+    if (param.dilution_type_si[nbs][1].compare("F"))
       sink_size = 12*param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1];
@@ -80,7 +80,7 @@ void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
                                tmLQCD_params->nproc_x * tmLQCD_params->nproc_y * 
                                tmLQCD_params->nproc_z);
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
-    if (param.dilution_type_si[nbs][1].compare("B"))
+    if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
     random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
     set_sink_random_vector(param.rnd_id[0], nbs, random_vector_si[nbs]);
@@ -148,7 +148,7 @@ void LapH::distillery::reset_all(const LapH::input_parameter& in_param){
     //       scheme in spatial coordinates is implied, the rest is fully
     //       dilutet!
     size_t sink_size = 4*param.nb_ev;
-    if (!param.dilution_type_si[nbs][1].compare("B"))
+    if (param.dilution_type_si[nbs][1].compare("F"))
       sink_size = 12*param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1];
@@ -164,7 +164,7 @@ void LapH::distillery::reset_all(const LapH::input_parameter& in_param){
   set_random_vector(param.rnd_id[0]);
   // sink random vectors
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
-    if (param.dilution_type_si[nbs][1].compare("B"))
+    if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
     random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
     set_sink_random_vector(param.rnd_id[0], nbs, random_vector_si[nbs]);
@@ -189,7 +189,7 @@ void LapH::distillery::reset_perambulator_and_randomvector(const size_t rnd_id){
     //       scheme in spatial coordinates is implied, the rest is fully
     //       dilutet!
     size_t sink_size = 4*param.nb_ev;
-    if (!param.dilution_type_si[nbs][1].compare("B"))
+    if (param.dilution_type_si[nbs][1].compare("F"))
       sink_size = 12*param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1];
@@ -205,7 +205,7 @@ void LapH::distillery::reset_perambulator_and_randomvector(const size_t rnd_id){
   // resetting random seed and generating new random vector
   set_random_vector(rnd_id); // source
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){ // sinks
-    if (param.dilution_type_si[nbs][1].compare("B"))
+    if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
     random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
     set_sink_random_vector(param.rnd_id[rnd_id], nbs, random_vector_si[nbs]);
@@ -343,6 +343,26 @@ void LapH::distillery::create_source(std::complex<double>** source) {
 }
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
+static size_t create_sink_dilution_index(const size_t xx, const size_t Ls, 
+                                         const size_t size, 
+                                         const std::string type){
+  if(type == "B"){
+    size_t x_h = Ls/size;
+    for(size_t x1 = 0; x1 < size; x1++)
+      if(xx >= x1*x_h && xx < (x1+1)*x_h)
+        return x1;
+  }
+  else if(type == "I"){
+    for(size_t x1 = 0; x1 < size; x1++){
+      if(xx%size == x1){
+        return x1;
+      }
+    }
+  }
+  return 0;
+}
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 void LapH::distillery::add_to_perambulator(
                          const std::complex<double>* const * const propagator) { 
   
@@ -426,43 +446,25 @@ void LapH::distillery::add_to_perambulator(
                 M(x, 12*col + 3*d + c) = propagator[col][d_h + c];
           }}}
         }
-
         // building the diluted random vector matrix
         size_t dil_size = param.dilution_size_si[nbs][1];
+        std::string dil_type = param.dilution_type_si[nbs][1];
         Eigen::MatrixXcd R = Eigen::MatrixXcd::Zero(Vs, 
                                                  12*dil_size*dil_size*dil_size);
         for(size_t x = 0; x < X; x++){
           for(size_t y = 0; y < Y; y++){
             for(size_t z = 0; z < Z; z++){
-              size_t xx = X*px + x;
-              size_t x_quadrant = 0;
-              size_t x_h = Ls/dil_size;
-              for(size_t x1 = 0; x1 < dil_size; x1++){
-                if(xx >= x1*x_h && xx < (x1+1)*x_h){
-                  x_quadrant = x1;
-                  break;
-                }
-              }
-              size_t yy = Y*py + y;
-              size_t y_quadrant = 0;
-              size_t y_h = Ls/dil_size;
-              for(size_t y1 = 0; y1 < dil_size; y1++){
-                if(yy >= y1*y_h && yy < (y1+1)*y_h){
-                  y_quadrant = y1;
-                  break;
-                }
-              }
-              size_t zz = Z*pz + z;
-              size_t z_quadrant = 0;
-              size_t z_h = Ls/dil_size;
-              for(size_t z1 = 0; z1 < dil_size; z1++){
-                if(zz >= z1*z_h && zz < (z1+1)*z_h){
-                  z_quadrant = z1;
-                  break;
-                }
-              }
-              size_t col = (x_quadrant*dil_size + y_quadrant) * dil_size + 
-                                                                     z_quadrant;
+
+              size_t x_glb = X*px + x;
+              size_t x_pos = create_sink_dilution_index(
+                                                 x_glb, Ls, dil_size, dil_type);
+              size_t y_glb = Y*py + y;
+              size_t y_pos = create_sink_dilution_index(
+                                                 y_glb, Ls, dil_size, dil_type);
+              size_t z_glb = Z*pz + z;
+              size_t z_pos = create_sink_dilution_index(
+                                                 z_glb, Ls, dil_size, dil_type);
+              size_t col = (x_pos*dil_size + y_pos) * dil_size + z_pos;
               size_t row = x*Y*Z + y*Z + z;
               R.block(row, 12*col, 1, 12) = 
                  (random_vector_si[nbs].segment(12*Vs*t + row, 12)).transpose();
@@ -477,11 +479,9 @@ void LapH::distillery::add_to_perambulator(
               for(size_t c = 0; c < 3; ++c)    
                 (perambulator[nbs][t])(12*ev+3*d+c, col) = 
                                                           res(ev, 12*col+3*d+c);
-
       } // end of loop over sink time index
     } // end of if else desision of sink type
   } // end of loop over sinks
-
   MPI_Barrier(MPI_COMM_WORLD);
   time1 = MPI_Wtime() - time1;
   if(myid == 0)
@@ -511,7 +511,7 @@ void LapH::distillery::write_perambulator_to_disk(const size_t rnd_id) {
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
     const size_t number_of_eigen_vec = param.nb_ev;
     size_t sink_size = 4*number_of_eigen_vec;
-    if (!param.dilution_type_si[nbs][1].compare("B"))
+    if (param.dilution_type_si[nbs][1].compare("F"))
       sink_size = 12*param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1];

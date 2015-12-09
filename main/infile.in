@@ -24,7 +24,7 @@ inversion_source_number_v = 8
 inversion_source_type_d   = F
 inversion_source_number_d = 4
 
-nb_of_sinks = 2
+nb_of_sinks = 6
 
 seed = 234325
 inversion_sink_type_t   = F
@@ -36,11 +36,51 @@ inversion_sink_number_d = 4
 inversion_sink_type_c   = F
 inversion_sink_number_c = 3
 
+seed = 2903577
+inversion_sink_type_t   = F
+inversion_sink_number_t = 4
+inversion_sink_type_s   = B
+inversion_sink_number_s = 1
+inversion_sink_type_d   = F
+inversion_sink_number_d = 4
+inversion_sink_type_c   = F
+inversion_sink_number_c = 3
+
 seed = 92735
 inversion_sink_type_t   = F
 inversion_sink_number_t = 4
 inversion_sink_type_s   = B
 inversion_sink_number_s = 2
+inversion_sink_type_d   = F
+inversion_sink_number_d = 4
+inversion_sink_type_c   = F
+inversion_sink_number_c = 3
+
+seed = 90257203
+inversion_sink_type_t   = F
+inversion_sink_number_t = 4
+inversion_sink_type_s   = B
+inversion_sink_number_s = 4
+inversion_sink_type_d   = F
+inversion_sink_number_d = 4
+inversion_sink_type_c   = F
+inversion_sink_number_c = 3
+
+seed = 5423451
+inversion_sink_type_t   = F
+inversion_sink_number_t = 4
+inversion_sink_type_s   = I
+inversion_sink_number_s = 2
+inversion_sink_type_d   = F
+inversion_sink_number_d = 4
+inversion_sink_type_c   = F
+inversion_sink_number_c = 3
+
+seed = 190734
+inversion_sink_type_t   = F
+inversion_sink_number_t = 4
+inversion_sink_type_s   = I
+inversion_sink_number_s = 4
 inversion_sink_type_d   = F
 inversion_sink_number_d = 4
 inversion_sink_type_c   = F
