@@ -23,57 +23,66 @@ MAIN = main
 GENERAL = distillery ranlxs input_parms
 MODULES = $(GENERAL)
 
+# search path for modules
+MDIR = ./ ../random ../modules
+VPATH = .:$(MDIR)
 
 # tmLQCD paths
-TMLQCD = /data/LapHs/peram_gen_mpi2/tmLQCD
-TMLQCD_build = /data/LapHs/peram_gen_mpi2/tmLIB
-
-# search path for modules
-MDIR = ./ ../random ../modules $(TMLQCD) $(TMLQCD)/include
-VPATH = .:$(MDIR)
+TMLQCD = /homec/hbn28/hbn280/head/tmLQCD
+TMLQCD_build = /homec/hbn28/hbn280/head/4dim
 
 # Logging option (-mpilog or -mpitrace or -mpianim)
 LOGOPTION =
 
-LIMEPATH = /home/knippsch/ExternLibraries/lime-1.3.2
+LIMEPATH = /homec/hbn28/hbn280/head/lemon
 
 # additional include directories
-INCPATH = ../include /home/knippsch/ExternLibraries/eigen-3.2.1 $(TMLQCD)/ \
-          $(TMLQCD)/include $(TMLQCD_build)/ $(LIMEPATH)/include/
+INCPATH = ../include $(HOME)/eigen $(TMLQCD)/ \
+          $(TMLQCD)/include $(TMLQCD_build) $(LIMEPATH)/include 
 
 
 # additional libraries
 # need to link against probably all libs in $(TMLQCD)/lib/
-LIBS = wrapper hmc monomial operator solver init linalg hmc xchange rational \
-       io blas lapack blas m lime gfortran
+LIBS = wrapper hmc monomial operator solver init linalg hmc xchange rational io \
+       esslbg lapack esslbg xlf90_r xl xlopt xlf90_r xlfmath xlsmp pthread lemon \
+       lime xl xlopt xlf90_r xlfmath xlsmp pthread xlf90 xlomp_ser dl m nss_files \
+       nss_dns resolv m 
 
-LIBPATH = /usr/local/lib $(TMLQCD_build)/lib/  $(LIMEPATH)/lib/
-
+LIBPATH = /usr/local/lib $(TMLQCD_build)/lib/  $(LIMEPATH)/lib/ \
+				  /bgsys/local/lib/ \
+          /bgsys/ibm_essl/prod/opt/ibmmath/lib64 \
+	  			/bgsys/drivers/toolchain/V1R2M1_base-efix030/gnu-linux/lib/gcc \
+	  			/bgsys/drivers/toolchain/V1R2M1_base-efix030/gnu-linux/powerpc64-bgq-linux/lib \
+	  			/bgsys/drivers/toolchain/V1R2M1_base-efix030/gnu-linux/lib/gcc/powerpc64-bgq-linux/4.4.6 \
+          /homec/hbn28/hbn280/lib \
+	  			/homec/hbn28/hbn280/head/lime-1.3.2/lib \
+	  			/homec/hbn28/hbn280/lib/lemon/lib \
+          /opt/ibmcmp/xlf/bg/14.1/lib64 \
+          /opt/ibmcmp/xlsmp/bg/3.1/bglib64 \
+	  			/opt/ibmcmp/xlmass/bg/7.3/bglib64 \
+          /usr/local/bg_soft/lapack/3.3.0 \
+          /usr/local/bg_soft/lapack/3.3.0/lib
 
 # scheduling and optimization options
-CXXFLAGS = -Wall -pedantic -O2 -march=native -std=c++0x -DSSE3
-CFLAGS =   -Wall -pedantic -O2 -march=native -std=c99 -DHAVE_CONFIG_H
+CXXFLAGS = -std=c++11 -pedantic -O2 -march=qp -mtune=qp -fopenmp 
+CFLAGS =   -std=c99   -pedantic -O2 -march=qp -mtune=qp -fopenmp 
 
 ############################## do not change ###################################
 
 SHELL=/bin/bash
-CXX=mpic++
-CLINKER=mpic++
-CC=mpicc 
+CXX=mpig++
+CLINKER=mpig++
+CC=mpigcc
 
-CMODULES = start ranlxd
+CMODULES =
 
-PGMS = $(MAIN) $(MODULES)
+PGMS= $(MAIN) $(MODULES)
 
 -include $(addsuffix .d,$(PGMS))
 
 # rule to make dependencies
 $(addsuffix .d,$(PGMS)): %.d: %.cpp Makefile
 	@ $(CXX) -ansi $< -MM $(addprefix -I,$(INCPATH)) -o $@
-
-# rule to make dependencies
-$(addsuffix .d,$(CMODULES)): %.d: %.c Makefile
-	@ $(CC) -ansi $< -MM $(addprefix -I,$(INCPATH)) -o $@
 
 # rule to compile source programs
 $(addsuffix .o,$(PGMS)): %.o: %.cpp Makefile
@@ -95,11 +104,15 @@ rmxeq:
 	@ -rm -f $(MAIN); \
         echo "delete old executables"
 
+
 # make dependencies
+
 mkdep:  $(addsuffix .d,$(PGMS))
 	@ echo "generate tables of dependencies"
 
+
 # clean directory
+
 clean:
 	@ -rm -rf *.d *.o *.alog *.clog *.slog $(MAIN)
 .PHONY: clean

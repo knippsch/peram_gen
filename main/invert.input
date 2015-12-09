@@ -5,9 +5,13 @@
 L=4
 T=4
 
+NrXProcs = 2
+NrYProcs = 2
+NrZProcs = 1
+
 OMPNumThreads = 1
 DisableIOChecks = yes
-DebugLevel = 3
+DebugLevel = 1
 InitialStoreCounter = 1000
 Measurements = 1
 2kappamu = 0.177

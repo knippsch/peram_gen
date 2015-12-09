@@ -12,6 +12,7 @@
 # include <omp.h>
 #endif
 #define MAIN_PROGRAM
+#include "config.h"
 #include "global.h"
 #include "git_hash.h"
 #include "getopt.h"
@@ -32,11 +33,23 @@
 #include "linalg/convert_eo_to_lexic.h"
 #include "pre_wrapper.h"
 
+#ifdef HAVE_GPU
+extern void init_mixedsolve_eo(su3** gf);
+extern void init_mixedsolve(su3** gf);
+extern void finalize_mixedsolve();
+extern void init_gpu_fields(int need_momenta);
+extern void finalize_gpu_fields();
+#include "GPU/cudadefs.h"
+  #ifdef TEMPORALGAUGE
+     #include "temporalgauge.h" 
+   #endif
+#endif
+
 
 void pre_wrapper(int argc, char *argv[]) {
 
-  DUM_DERI = 8;
-  DUM_MATRIX = DUM_DERI + 5;
+  DUM_DERI = 4; // war 8
+  DUM_MATRIX = DUM_DERI + 3; // war 5
   NO_OF_SPINORFIELDS = DUM_MATRIX + 3;
 
   // in read_input.h
@@ -103,6 +116,28 @@ void pre_wrapper(int argc, char *argv[]) {
   // initialise the operators
   init_operators();
 
+  #ifdef HAVE_GPU
+   if(usegpu_flag){
+    if(even_odd_flag){
+       init_mixedsolve_eo(g_gauge_field);
+    }
+    else{
+      init_mixedsolve(g_gauge_field);
+    }
+    #ifdef GPU_DOUBLE
+      /*init double fields w/o momenta*/
+      init_gpu_fields(0);
+    #endif
+    #ifdef TEMPORALGAUGE
+      int retval;
+      if((retval=init_temporalgauge(VOLUME, g_gauge_field)) !=0){
+	      if(g_proc_id == 0) printf("Error while initializing temporal gauge. Aborting...\n");   
+	      exit(200);
+      }
+    #endif
+   }//usegpu_flag
+  #endif  
+
 #ifdef _USE_HALFSPINOR
   j = init_dirac_halfspinor();
   if (j != 0) {
@@ -121,7 +156,7 @@ void pre_wrapper(int argc, char *argv[]) {
     init_xchange_halffield();
 #  endif
 #endif
-  
+
   return;
 }
 
@@ -134,7 +169,8 @@ int tmLQCD_read_gauge(const int nconfig) {
 	   conf_filename);
     fflush(stdout);
   }
-  if( (j = read_gauge_field(conf_filename,g_gauge_field)) !=0) {
+  if( (j = read_gauge_field(conf_filename)) !=0) {
+//  if( (j = read_gauge_field(conf_filename,g_gauge_field)) !=0) {
     fprintf(stderr, "Error %d while reading gauge field from %s\n Aborting...\n", j, conf_filename);
     exit(-2);
   }
