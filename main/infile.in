@@ -28,6 +28,7 @@ inversion_source_number_d = 4
 
 nb_of_sinks = 2
 
+nb_of_sink_rnd_vec = 1
 seed = 0
 inversion_sink_type_t   = F
 inversion_sink_number_t = 4
@@ -38,7 +39,9 @@ inversion_sink_number_d = 4
 inversion_sink_type_c   = F
 inversion_sink_number_c = 3
 
+nb_of_sink_rnd_vec = 2
 seed = 2903577
+seed = 23556
 inversion_sink_type_t   = F
 inversion_sink_number_t = 4
 inversion_sink_type_s   = B

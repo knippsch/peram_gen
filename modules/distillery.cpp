@@ -23,7 +23,6 @@ inline std::complex<double> swap_complex(std::complex<double> val){
                               swap_endian<double>(std::imag(val)));
 }
 // -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
 void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
 
   param = in_param;
@@ -47,21 +46,24 @@ void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
   
   perambulator.resize(nb_of_sinks);
   for(size_t nbs = 0; nbs < nb_of_sinks; nbs++){
-    perambulator[nbs].resize(T);
-    // TODO: usually the sink is only smeared so the size is 4 time the number
-    //       of eigen vectors. If the stochastik sink is applied only a block
-    //       scheme in spatial coordinates is implied, the rest is fully
-    //       dilutet!
-    size_t sink_size = 4*param.nb_ev;
-    if (param.dilution_type_si[nbs][1].compare("F"))
-      sink_size = 12*param.dilution_size_si[nbs][1] *
-                     param.dilution_size_si[nbs][1] *
-                     param.dilution_size_si[nbs][1];
-    for(size_t t = 0; t < T; ++t){
-      perambulator[nbs][t] = Eigen::MatrixXcd::Zero(sink_size,
+    perambulator[nbs].resize(param.nb_of_sink_rnd_vec[nbs]);
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      perambulator[nbs][nbr].resize(T);
+      // TODO: usually the sink is only smeared so the size is 4 time the number
+      //       of eigen vectors. If the stochastik sink is applied only a block
+      //       scheme in spatial coordinates is implied, the rest is fully
+      //       dilutet!
+      size_t sink_size = 4*param.nb_ev;
+      if (param.dilution_type_si[nbs][1].compare("F"))
+        sink_size = 12*param.dilution_size_si[nbs][1] *
+                       param.dilution_size_si[nbs][1] *
+                       param.dilution_size_si[nbs][1];
+      for(size_t t = 0; t < T; ++t){
+        perambulator[nbs][nbr][t] = Eigen::MatrixXcd::Zero(sink_size,
                                                     param.dilution_size_so[0] * 
                                                     param.dilution_size_so[1] * 
                                                     param.dilution_size_so[2] );
+      }
     }
   }
   random_vector = new Eigen::VectorXcd[Lt];
@@ -77,15 +79,17 @@ void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
   // generating random vectors for sink
   random_vector_si.resize(param.nb_of_sinks);
   const size_t volume = 12 * Ls * Ls * Ls * Lt / (tmLQCD_params->nproc_t *
-                               tmLQCD_params->nproc_x * tmLQCD_params->nproc_y * 
+                               tmLQCD_params->nproc_x * tmLQCD_params->nproc_y *
                                tmLQCD_params->nproc_z);
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
     if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
-    random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
-    set_sink_random_vector(0, nbs, random_vector_si[nbs]);
+    random_vector_si[nbs].resize(param.nb_of_sink_rnd_vec[nbs]);
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      random_vector_si[nbs][nbr] = Eigen::VectorXcd::Zero(volume);
+      set_sink_random_vector(0, nbs, nbr, random_vector_si[nbs][nbr]);
+    }
   }
-
   // is everything allocated?
   memory_allocated = true;
   
@@ -105,10 +109,16 @@ void LapH::distillery::clean() {
     (random_vector[t]).resize(0);
   }
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
-    for(size_t t = 0; t < T; ++t){
-      (perambulator[nbs][t]).resize(0, 0);
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      for(size_t t = 0; t < T; ++t){
+        (perambulator[nbs][nbr][t]).resize(0, 0);
+      }
+      (perambulator[nbs][nbr]).resize(0);
+      if (!param.dilution_type_si[nbs][1].compare("F"))
+        continue;
+      (random_vector_si[nbs][nbr]).resize(0);
     }
-    perambulator[nbs].resize(0);
+    (perambulator[nbs]).resize(0);
     (random_vector_si[nbs]).resize(0);
   }
   perambulator.resize(0);
@@ -134,7 +144,7 @@ void LapH::distillery::reset_all(const LapH::input_parameter& in_param){
                                              tmLQCD_params->nproc_y * 
                                              tmLQCD_params->nproc_z);
   const size_t volume = 12 * Ls * Ls * Ls * Lt / (tmLQCD_params->nproc_t *
-                               tmLQCD_params->nproc_x * tmLQCD_params->nproc_y * 
+                               tmLQCD_params->nproc_x * tmLQCD_params->nproc_y *
                                tmLQCD_params->nproc_z);
   // eigen vectors
   for(size_t t = 0; t < T; ++t){
@@ -143,20 +153,22 @@ void LapH::distillery::reset_all(const LapH::input_parameter& in_param){
   read_eigenvectors();  
   // perambulator
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
-    // TODO: usually the sink is only smeared so the size is 4 time the number
-    //       of eigen vectors. If the stochastik sink is applied only a block
-    //       scheme in spatial coordinates is implied, the rest is fully
-    //       dilutet!
     size_t sink_size = 4*param.nb_ev;
     if (param.dilution_type_si[nbs][1].compare("F"))
       sink_size = 12*param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1];
-    for(size_t t = 0; t < T; ++t)
-      perambulator[nbs][t] = Eigen::MatrixXcd::Zero(sink_size,
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      // TODO: usually the sink is only smeared so the size is 4 time the number
+      //       of eigen vectors. If the stochastik sink is applied only a block
+      //       scheme in spatial coordinates is implied, the rest is fully
+      //       dilutet!
+      for(size_t t = 0; t < T; ++t)
+        perambulator[nbs][nbr][t] = Eigen::MatrixXcd::Zero(sink_size,
                                                     param.dilution_size_so[0] * 
                                                     param.dilution_size_so[1] * 
                                                     param.dilution_size_so[2] );
+    }
   }
   // source random vector
   for(size_t t = 0; t < Lt; ++t)
@@ -166,8 +178,10 @@ void LapH::distillery::reset_all(const LapH::input_parameter& in_param){
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
     if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
-    random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
-    set_sink_random_vector(0, nbs, random_vector_si[nbs]);
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      random_vector_si[nbs][nbr] = Eigen::VectorXcd::Zero(volume);
+      set_sink_random_vector(0, nbs, nbr, random_vector_si[nbs][nbr]);
+    }
   }
 
 }
@@ -179,7 +193,7 @@ void LapH::distillery::reset_perambulator_and_randomvector(const size_t rnd_id){
   const size_t Lt = param.Lt;
   const size_t T = param.Lt/tmLQCD_params->nproc_t;
   const size_t volume = 12 * Ls * Ls * Ls * Lt / (tmLQCD_params->nproc_t *
-                               tmLQCD_params->nproc_x * tmLQCD_params->nproc_y * 
+                               tmLQCD_params->nproc_x * tmLQCD_params->nproc_y *
                                tmLQCD_params->nproc_z);
 
   // setting perambulator and random vector to zero 
@@ -193,11 +207,13 @@ void LapH::distillery::reset_perambulator_and_randomvector(const size_t rnd_id){
       sink_size = 12*param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1] *
                      param.dilution_size_si[nbs][1];
-    for(size_t t = 0; t < T; ++t)
-      perambulator[nbs][t] = Eigen::MatrixXcd::Zero(sink_size,
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      for(size_t t = 0; t < T; ++t)
+        perambulator[nbs][nbr][t] = Eigen::MatrixXcd::Zero(sink_size,
                                                     param.dilution_size_so[0] * 
                                                     param.dilution_size_so[1] * 
                                                     param.dilution_size_so[2] );
+    }
   }
   for(size_t t = 0; t < param.Lt; ++t)
     random_vector[t] = Eigen::VectorXcd::Zero(4 * param.nb_ev);
@@ -207,8 +223,11 @@ void LapH::distillery::reset_perambulator_and_randomvector(const size_t rnd_id){
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){ // sinks
     if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
-    random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
-    set_sink_random_vector(rnd_id, nbs, random_vector_si[nbs]);
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      random_vector_si[nbs][nbr] = Eigen::VectorXcd::Zero(volume);
+      set_sink_random_vector(rnd_id, nbs, nbr, 
+                             random_vector_si[nbs][nbr]);
+    }
   }
 
 }
@@ -421,62 +440,64 @@ void LapH::distillery::add_to_perambulator(
         for(size_t col = 0; col < nb_of_inversions; col++)
           for(size_t ev = 0; ev < nb_ev; ++ev)  
             for(size_t d = 0; d < 4; ++d)    
-              (perambulator[nbs][t])(4*ev+d, col) = vec1(ev, 4*col+d);
+              (perambulator[nbs][0][t])(4*ev+d, col) = vec1(ev, 4*col+d);
     
       } // end of loop over sink time index
     }
     else { // stochastic sink
-      for(size_t t = 0; t < T; ++t){ 
-        // resorting propagator to make the dilution easier
-        Eigen::MatrixXcd M = 
-               Eigen::MatrixXcd::Zero(Vs, 12*nb_of_inversions);
-        // running over inversions
-        for(size_t col = 0; col < nb_of_inversions; col++){
-          // running over all indices on one timeslice 
-          // -> resorting propagator and copying it into vec
-          size_t t_h = 12*Vs*t; // helper index
-          for(size_t x = 0; x < Vs; ++x){ // spatial
-            size_t x_h = t_h + 12*x;  // helper index
-            for(size_t d = 0; d < 4; ++d){      // Dirac
-              size_t d_h = x_h + 3*d; // helper index
-              for(size_t c = 0; c < 3; ++c){    // colour
-                M(x, 12*col + 3*d + c) = propagator[col][d_h + c];
-          }}}
-        }
-        // building the diluted random vector matrix
-        size_t dil_size = param.dilution_size_si[nbs][1];
-        std::string dil_type = param.dilution_type_si[nbs][1];
-        Eigen::MatrixXcd R = Eigen::MatrixXcd::Zero(Vs, 
-                                                 12*dil_size*dil_size*dil_size);
-        for(size_t x = 0; x < X; x++){
-          for(size_t y = 0; y < Y; y++){
-            for(size_t z = 0; z < Z; z++){
+      for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+        for(size_t t = 0; t < T; ++t){ 
+          // resorting propagator to make the dilution easier
+          Eigen::MatrixXcd M = 
+                 Eigen::MatrixXcd::Zero(Vs, 12*nb_of_inversions);
+          // running over inversions
+          for(size_t col = 0; col < nb_of_inversions; col++){
+            // running over all indices on one timeslice 
+            // -> resorting propagator and copying it into vec
+            size_t t_h = 12*Vs*t; // helper index
+            for(size_t x = 0; x < Vs; ++x){ // spatial
+              size_t x_h = t_h + 12*x;  // helper index
+              for(size_t d = 0; d < 4; ++d){      // Dirac
+                size_t d_h = x_h + 3*d; // helper index
+                for(size_t c = 0; c < 3; ++c){    // colour
+                  M(x, 12*col + 3*d + c) = propagator[col][d_h + c];
+            }}}
+          }
+          // building the diluted random vector matrix
+          size_t dil_size = param.dilution_size_si[nbs][1];
+          std::string dil_type = param.dilution_type_si[nbs][1];
+          Eigen::MatrixXcd R = Eigen::MatrixXcd::Zero(Vs, 
+                                                   12*dil_size*dil_size*dil_size);
+          for(size_t x = 0; x < X; x++){
+            for(size_t y = 0; y < Y; y++){
+              for(size_t z = 0; z < Z; z++){
 
-              size_t x_glb = X*px + x;
-              size_t x_pos = create_sink_dilution_index(
-                                                 x_glb, Ls, dil_size, dil_type);
-              size_t y_glb = Y*py + y;
-              size_t y_pos = create_sink_dilution_index(
-                                                 y_glb, Ls, dil_size, dil_type);
-              size_t z_glb = Z*pz + z;
-              size_t z_pos = create_sink_dilution_index(
-                                                 z_glb, Ls, dil_size, dil_type);
-              size_t col = (x_pos*dil_size + y_pos) * dil_size + z_pos;
-              size_t row = x*Y*Z + y*Z + z;
-              R.block(row, 12*col, 1, 12) = 
-                 (random_vector_si[nbs].segment(12*Vs*t + row, 12)).transpose();
+                size_t x_glb = X*px + x;
+                size_t x_pos = create_sink_dilution_index(
+                                                   x_glb, Ls, dil_size, dil_type);
+                size_t y_glb = Y*py + y;
+                size_t y_pos = create_sink_dilution_index(
+                                                   y_glb, Ls, dil_size, dil_type);
+                size_t z_glb = Z*pz + z;
+                size_t z_pos = create_sink_dilution_index(
+                                                   z_glb, Ls, dil_size, dil_type);
+                size_t col = (x_pos*dil_size + y_pos) * dil_size + z_pos;
+                size_t row = x*Y*Z + y*Z + z;
+                R.block(row, 12*col, 1, 12) = 
+                   (random_vector_si[nbs][nbr].segment(12*Vs*t + row, 12)).transpose();
+              }
             }
           }
-        }
-        Eigen::MatrixXcd res = R.adjoint()*M;
-        // resorting res into correct propagator order
-        for(size_t col = 0; col < nb_of_inversions; col++)
-          for(size_t ev = 0; ev < dil_size*dil_size*dil_size; ++ev)  
-            for(size_t d = 0; d < 4; ++d)    
-              for(size_t c = 0; c < 3; ++c)    
-                (perambulator[nbs][t])(12*ev+3*d+c, col) = 
-                                                          res(ev, 12*col+3*d+c);
-      } // end of loop over sink time index
+          Eigen::MatrixXcd res = R.adjoint()*M;
+          // resorting res into correct propagator order
+          for(size_t col = 0; col < nb_of_inversions; col++)
+            for(size_t ev = 0; ev < dil_size*dil_size*dil_size; ++ev)  
+              for(size_t d = 0; d < 4; ++d)    
+                for(size_t c = 0; c < 3; ++c)    
+                  (perambulator[nbs][nbr][t])(12*ev+3*d+c, col) = 
+                                                            res(ev, 12*col+3*d+c);
+        } // end of loop over sink time index
+      } // end of loop over random sinks
     } // end of if else desision of sink type
   } // end of loop over sinks
   MPI_Barrier(MPI_COMM_WORLD);
@@ -516,81 +537,82 @@ void LapH::distillery::write_perambulator_to_disk(const size_t rnd_id) {
     const size_t size_perambulator_entry = number_of_inversions*Lt*sink_size;
 
     // memory for reading perambulators and setting it to zero
-    std::vector<std::complex<double> > perambulator_write(
+    for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
+      std::vector<std::complex<double> > perambulator_write(
                        size_perambulator_entry, std::complex<double>(0.0, 0.0));
-
-    // copy perambulator into writing array
-    for(size_t t = 0; t < T; ++t){
-      size_t t_global = T*tmLQCD_params->proc_coords[0] + t;
-      size_t t_h = t_global*sink_size; // helper index
-      for(size_t row_i = 0; row_i < sink_size; ++row_i){
-        size_t row_i_h = (row_i + t_h) * number_of_inversions; // helper index
-        for(size_t col_i = 0; col_i < number_of_inversions; ++col_i){
-          perambulator_write[row_i_h + col_i] = 
-                                             perambulator[nbs][t](row_i, col_i);
+  
+      // copy perambulator into writing array
+      for(size_t t = 0; t < T; ++t){
+        size_t t_global = T*tmLQCD_params->proc_coords[0] + t;
+        size_t t_h = t_global*sink_size; // helper index
+        for(size_t row_i = 0; row_i < sink_size; ++row_i){
+          size_t row_i_h = (row_i + t_h) * number_of_inversions; // helper index
+          for(size_t col_i = 0; col_i < number_of_inversions; ++col_i){
+            perambulator_write[row_i_h + col_i] = 
+                                        perambulator[nbs][nbr][t](row_i, col_i);
+          }
         }
       }
-    }
-    // Summing all the perambulator data on process 0
-    if(myid == 0)
-      MPI_Reduce(MPI_IN_PLACE, &(perambulator_write[0]), 
-                 2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    else 
-      MPI_Reduce(&(perambulator_write[0]), 0,
-                 2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-  
-    int kill_program = 0; // this is needed to savely kill the program if 
-                          // writing of perambulator fails
-    // process 0 writes the data to disk
-    if(myid == 0){
-      // changing endianess
-      if(param.endianness == "little")
-        for (size_t i = 0; i < size_perambulator_entry; i++)
-          perambulator_write[i] = perambulator_write[i];
-      else
-        for (size_t i = 0; i < size_perambulator_entry; i++)
-          perambulator_write[i] = swap_complex(perambulator_write[i]);
+      // Summing all the perambulator data on process 0
+      if(myid == 0)
+        MPI_Reduce(MPI_IN_PLACE, &(perambulator_write[0]), 
+             2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+      else 
+        MPI_Reduce(&(perambulator_write[0]), 0,
+             2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-      // data path
-      std::string filename = param.outpath + "/perambulator";
-      if(verbose) printf("writing perambulators from files:\n");
-      else printf("\twriting perambulator\n");
-      // create perambulator file name
-      sprintf(outfile,
-          "%s.rndvecnb%02d.%s.Tso%s%04d.Vso%s%04d.Dso%s%01d.Tsi%s%04d.Ssi%s%04d" \
-          ".Dsi%s%01d.Csi%s%01d.smeared%01d.%05d",
-          filename.c_str(), (int) param.rnd_id[rnd_id], param.quarktype.c_str(), 
+      int kill_program = 0; // flag to check if program should be terminated    
+      // process 0 writes the data to disk
+      if(myid == 0){
+        // changing endianess
+        for (size_t i = 0; i < size_perambulator_entry; i++)
+          //perambulator_write[i] = swap_complex(perambulator_write[i]);
+          perambulator_write[i] = perambulator_write[i];
+        // data path
+        std::string filename = param.outpath + "/perambulator";
+        if(verbose) printf("writing perambulators from files:\n");
+        else printf("\twriting perambulator\n");
+        // create perambulator file name
+        sprintf(outfile,
+          "%s.rndvecnb%02d.%s.Tso%s%04d.Vso%s%04d.Dso%s%01d.Tsi%s%04d." \
+          "Ssi%s%04d.Dsi%s%01d.Csi%s%01d.smeared%01d.%05d",
+          filename.c_str(), (int) param.rnd_id[rnd_id], param.quarktype.c_str(),
           param.dilution_type_so[0].c_str(), (int) param.dilution_size_so[0], 
           param.dilution_type_so[1].c_str(), (int) param.dilution_size_so[1], 
           param.dilution_type_so[2].c_str(), (int) param.dilution_size_so[2],
-          param.dilution_type_si[nbs][0].c_str(), (int) param.dilution_size_si[nbs][0], 
-          param.dilution_type_si[nbs][1].c_str(), (int) param.dilution_size_si[nbs][1], 
-          param.dilution_type_si[nbs][2].c_str(), (int) param.dilution_size_si[nbs][2], 
-          param.dilution_type_si[nbs][3].c_str(), (int) param.dilution_size_si[nbs][3], 
-          1, (int) param.config);
+          param.dilution_type_si[nbs][0].c_str(), 
+          (int) param.dilution_size_si[nbs][0], 
+          param.dilution_type_si[nbs][1].c_str(), 
+          (int) param.dilution_size_si[nbs][1], 
+          param.dilution_type_si[nbs][2].c_str(), 
+          (int) param.dilution_size_si[nbs][2], 
+          param.dilution_type_si[nbs][3].c_str(), 
+          (int) param.dilution_size_si[nbs][3], 
+          (int) nbr, (int) param.config);
      
-      // writing data
-      if((fp = fopen(outfile, "wb")) == NULL){
-        std::cout << "failed to open file: " << outfile << "\n" << std::endl;
+        // writing data
+        if((fp = fopen(outfile, "wb")) == NULL){
+          std::cout << "failed to open file: " << outfile << "\n" << std::endl;
+          exit(0);
+        }
+        if(verbose) printf("\tread file: %s\n", outfile);
+        size_t peram_write_size = fwrite(&(perambulator_write[0]), 
+                                         sizeof(std::complex<double>),
+                                         size_perambulator_entry, fp);
+        if(peram_write_size != size_perambulator_entry){
+          std::cout << "\n\nWriting Perambulator failed - exit program\n\n" 
+                    << std::endl;
+          kill_program = 1;
+        }
+        fclose(fp);
+       
+      } // if for process 0 ends here
+      MPI_Bcast(&kill_program, 1, MPI_INT, 0, MPI_COMM_WORLD);
+      if(kill_program){ // kill program in case of write failure of perambulator
+        MPI_Finalize();
         exit(0);
       }
-      if(verbose) printf("\tread file: %s\n", outfile);
-      size_t peram_write_size = fwrite(&(perambulator_write[0]), 
-                                       sizeof(std::complex<double>),
-                                       size_perambulator_entry, fp);
-      if(peram_write_size != size_perambulator_entry){
-        std::cout << "\n\nWriting Perambulator failed - exit program\n\n" 
-                  << std::endl;
-        kill_program = 1;
-      }
-      fclose(fp);
-     
-    } // if for process 0 ends here
-    MPI_Bcast(&kill_program, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    if(kill_program){ // kill program in case of write failure of perambulator
-      MPI_Finalize();
-      exit(0);
-    }
+    } // for loop over random vectors ends here
   } // for loop over sinks ends here
   MPI_Barrier(MPI_COMM_WORLD);
   time1 = MPI_Wtime() - time1;
@@ -642,12 +664,45 @@ void LapH::distillery::set_random_vector(const size_t rnd_id) {
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 void LapH::distillery::set_sink_random_vector(const size_t rnd_id, 
-                                  const size_t sink_id, Eigen::VectorXcd& out) {
+          const size_t sink_id, const size_t rnd_id_si, Eigen::VectorXcd& out) {
 
-  rlxd_init(2, ((param.seed[rnd_id])^param.config)^(param.seed_si[sink_id]));
+  rlxd_init(2, 
+       ((param.seed[rnd_id])^param.config)^(param.seed_si[sink_id][rnd_id_si]));
   // Reinterpret cast is NOT good style but necessary here to connect the data
   // here with the structs of tmLQCD!
   random_spinor_field_lexic(reinterpret_cast<spinor*>(&out[0]), 1, RN_Z2);
+
+  
+  char outfile[400];
+  FILE *fp = NULL;
+
+  // writing data to disk
+  int myid = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  int kill_program = 0; // flag to check if data were correctly written
+  if(myid == 0){  
+    std::string filename = "./randomvector_sink";
+    sprintf(outfile, "%s.%zu_%zu", filename.c_str(), rnd_id, sink_id);
+  
+    if((fp = fopen(outfile, "wb")) == NULL){
+      std::cout << "\n\nfailed to open file to write random vector: " 
+                << outfile << "\n" << std::endl;
+      kill_program = 1;
+    }   
+    int check_write_size = fwrite(&out[0], sizeof(std::complex<double>), 
+                                  out.size(), fp);
+    if(check_write_size != out.size()){
+      std::cout << "\n\ncould not write all data for sink rnd vector!\n: " 
+                << outfile << "\n" << std::endl;
+      kill_program = 1;
+    }   
+    fclose(fp);
+  }
+  MPI_Bcast(&kill_program, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if(kill_program){ // kill program in case of write failure of rnd vecs
+    MPI_Finalize();
+    exit(0);
+  }
 
 }
 // -----------------------------------------------------------------------------

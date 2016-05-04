@@ -10,6 +10,7 @@ LapH::input_parameter::input_parameter(const input_parameter& other){
     dilution_type_so[i] = other.dilution_type_so[i];
   }
   nb_of_sinks = other.nb_of_sinks;
+  nb_of_sink_rnd_vec = other.nb_of_sink_rnd_vec;
   seed_si.resize(0);
   std::copy(other.seed_si.begin(), other.seed_si.end(), 
             std::back_inserter(seed_si));
@@ -63,6 +64,7 @@ LapH::input_parameter& LapH::input_parameter::operator=
       dilution_type_so[i] = other.dilution_type_so[i];
     }
     nb_of_sinks = other.nb_of_sinks;
+    nb_of_sink_rnd_vec = other.nb_of_sink_rnd_vec;
     seed_si.resize(0);
     std::copy(other.seed_si.begin(), other.seed_si.end(), 
               std::back_inserter(seed_si));
@@ -292,27 +294,32 @@ void LapH::input_parameter::parse_input_file(int argc, char *argv[]) {
   dilution_size_si.resize(nb_of_sinks);
   dilution_type_si.resize(nb_of_sinks);
   seed_si.resize(nb_of_sinks);
+  nb_of_sink_rnd_vec.resize(nb_of_sinks);
   for(size_t nbs = 0; nbs < nb_of_sinks; nbs++){
     dilution_size_si[nbs].resize(4);
     dilution_type_si[nbs].resize(4);
+    reader += fscanf(infile, "nb_of_sink_rnd_vec = %zu\n", 
+                                                    &(nb_of_sink_rnd_vec[nbs]));
+    seed_si[nbs].resize(nb_of_sink_rnd_vec[nbs]);
     // seed for sink reandom vector
-    reader += fscanf(infile, "seed = %i\n", &(seed_si[nbs]));
-    // type and number of dilution vectors for the sink in time ------------------
+    for(size_t nb_rnd = 0; nb_rnd < nb_of_sink_rnd_vec[nbs]; nb_rnd++)
+      reader += fscanf(infile, "seed = %i\n", &(seed_si[nbs][nb_rnd]));
+    // type and number of dilution vectors for the sink in time ----------------
     reader += fscanf(infile, "inversion_sink_type_t = %255s\n", readin);
     dilution_type_si[nbs][0].assign(readin);
     reader += fscanf(infile, "inversion_sink_number_t = %zu\n", 
                      &(dilution_size_si[nbs][0]));
-    // type and number of dilution vectors for the sink in space -----------------
+    // type and number of dilution vectors for the sink in space ---------------
     reader += fscanf(infile, "inversion_sink_type_s = %255s\n", readin);
     dilution_type_si[nbs][1].assign(readin);
     reader += fscanf(infile, "inversion_sink_number_s = %zu\n", 
                      &(dilution_size_si[nbs][1]));
-    // type and number of dilution vectors for the sink in Dirac space -----------
+    // type and number of dilution vectors for the sink in Dirac space ---------
     reader += fscanf(infile, "inversion_sink_type_d = %255s\n", readin);
     dilution_type_si[nbs][2].assign(readin);
     reader += fscanf(infile, "inversion_sink_number_d = %zu\n", 
                      &(dilution_size_si[nbs][2]));
-    // type and number of dilution vectors for the sink in colour space ----------
+    // type and number of dilution vectors for the sink in colour space --------
     reader += fscanf(infile, "inversion_sink_type_c = %255s\n", readin);
     dilution_type_si[nbs][3].assign(readin);
     reader += fscanf(infile, "inversion_sink_number_c = %zu\n", 

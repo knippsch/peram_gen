@@ -54,6 +54,8 @@ public:
   size_t dilution_size_so[3];      // SOURCE dilution sizes and types
   std::string dilution_type_so[3]; // 0 = time, 1 = eigevector space, 2 = Dirac
   size_t nb_of_sinks;              // number of sinks
+  std::vector<size_t> 
+               nb_of_sink_rnd_vec; // number of sink random vectors
   std::vector<
         std::vector<size_t> > 
                  dilution_size_si; // SINK dilution sizes and types
@@ -76,7 +78,8 @@ public:
   size_t nb_rnd;                   // random vector id of vector in process
   int* rnd_id;                     // id of random vectors
   int* seed;                       // seeds for random vector generation
-  std::vector<int> seed_si;        // seeds for sinkd random vector generation
+  std::vector<std::vector<int> >
+                          seed_si; // seeds for sink random vector generation
   std::string endianness;          // needed for endianess change 
 
   std::string quarktype;           // quark type: u,d,s,c -> for naming outfiles
