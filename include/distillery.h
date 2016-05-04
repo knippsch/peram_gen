@@ -35,6 +35,10 @@ extern "C"
 #include "mpi.h"
 #include "omp.h"
 
+extern "C" void zgemm_(char* TRANSA, char* TRANSB, const int* M,
+                       const int* N, const int* K, std::complex<double>* alpha, std::complex<double>* A,
+                       const int* LDA, std::complex<double>* B, const int* LDB, std::complex<double>* beta,
+                       std::complex<double>* C, const int* LDC); 
 
 namespace LapH {
 

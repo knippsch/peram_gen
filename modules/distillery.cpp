@@ -410,15 +410,13 @@ void LapH::distillery::add_to_perambulator(
   const size_t py = tmLQCD_params->proc_coords[2];
   const size_t pz = tmLQCD_params->proc_coords[3];
 
-
   // running over all sinks
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
     // checking if smeared or stochastic sink must be computed
     if (!param.dilution_type_si[nbs][1].compare("F")){ // smeared sink
       // running over sink time index
       for(size_t t = 0; t < T; ++t){ 
-        Eigen::MatrixXcd vec = Eigen::MatrixXcd::Zero(dim_row, 
-                                                            4*nb_of_inversions);
+        std::vector<std::complex<double> > vec(dim_row*4*nb_of_inversions);
         // running over inversions
         for(size_t col = 0; col < nb_of_inversions; col++){
           // running over all indices on one timeslice 
@@ -429,18 +427,29 @@ void LapH::distillery::add_to_perambulator(
             for(size_t d = 0; d < 4; ++d){      // Dirac
               size_t d_h = x_h + 3*d; // helper index
               for(size_t c = 0; c < 3; ++c){    // colour
-                 vec(3*x + c, col*4 + d) = propagator[col][d_h + c];
+                 vec.at(4*nb_of_inversions*(3*x + c) + col*4 + d) = 
+                                                       propagator[col][d_h + c];
           }}}
         }
     
         // multiplication with V^dagger and storing result in perambulator
-        Eigen::MatrixXcd vec1 = Eigen::MatrixXcd::Zero(nb_ev, 
-                                                            4*nb_of_inversions);
-        vec1 = ((V[t]).adjoint())*vec;
+        std::vector<std::complex<double> > vec1(nb_ev*4*nb_of_inversions);
+        std::complex<double> zero(0.0, 0.0);
+        std::complex<double> one(1.0, 0.0);
+        std::string type = "C";
+        const int M = nb_ev;
+        const int N = 4*nb_of_inversions;
+        const int K = dim_row;
+        Eigen::Matrix<std::complex<double>, Eigen::Dynamic, Eigen::Dynamic, 
+                                           Eigen::RowMajor> Vt = V[t].adjoint();
+        zgemm_(&type[0], &type[0], &M, &N, &K, &one, Vt.data(), 
+               &K, &vec[0], &N, &zero, &vec1[0], &M);
+
         for(size_t col = 0; col < nb_of_inversions; col++)
           for(size_t ev = 0; ev < nb_ev; ++ev)  
             for(size_t d = 0; d < 4; ++d)    
-              (perambulator[nbs][0][t])(4*ev+d, col) = vec1(ev, 4*col+d);
+              (perambulator[nbs][0][t])(4*ev+d, col) = 
+                                       std::conj(vec1.at(ev + nb_ev*(4*col+d)));
     
       } // end of loop over sink time index
     }
@@ -448,8 +457,7 @@ void LapH::distillery::add_to_perambulator(
       for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
         for(size_t t = 0; t < T; ++t){ 
           // resorting propagator to make the dilution easier
-          Eigen::MatrixXcd M = 
-                 Eigen::MatrixXcd::Zero(Vs, 12*nb_of_inversions);
+          std::vector<std::complex<double> > vec(Vs*12*nb_of_inversions);
           // running over inversions
           for(size_t col = 0; col < nb_of_inversions; col++){
             // running over all indices on one timeslice 
@@ -460,46 +468,59 @@ void LapH::distillery::add_to_perambulator(
               for(size_t d = 0; d < 4; ++d){      // Dirac
                 size_t d_h = x_h + 3*d; // helper index
                 for(size_t c = 0; c < 3; ++c){    // colour
-                  M(x, 12*col + 3*d + c) = propagator[col][d_h + c];
+                  vec.at(nb_of_inversions*(12*x + 3*d + c) + col) = 
+                                                       propagator[col][d_h + c];
             }}}
           }
           // building the diluted random vector matrix
           size_t dil_size = param.dilution_size_si[nbs][1];
           std::string dil_type = param.dilution_type_si[nbs][1];
-          Eigen::MatrixXcd R = Eigen::MatrixXcd::Zero(Vs, 
-                                                   12*dil_size*dil_size*dil_size);
+          Eigen::MatrixXcd R = Eigen::MatrixXcd::Zero(12*Vs, 
+                                                 12*dil_size*dil_size*dil_size);
           for(size_t x = 0; x < X; x++){
             for(size_t y = 0; y < Y; y++){
               for(size_t z = 0; z < Z; z++){
-
+  
                 size_t x_glb = X*px + x;
                 size_t x_pos = create_sink_dilution_index(
-                                                   x_glb, Ls, dil_size, dil_type);
+                                                 x_glb, Ls, dil_size, dil_type);
                 size_t y_glb = Y*py + y;
                 size_t y_pos = create_sink_dilution_index(
-                                                   y_glb, Ls, dil_size, dil_type);
+                                                 y_glb, Ls, dil_size, dil_type);
                 size_t z_glb = Z*pz + z;
                 size_t z_pos = create_sink_dilution_index(
-                                                   z_glb, Ls, dil_size, dil_type);
+                                                 z_glb, Ls, dil_size, dil_type);
                 size_t col = (x_pos*dil_size + y_pos) * dil_size + z_pos;
-                size_t row = x*Y*Z + y*Z + z;
-                R.block(row, 12*col, 1, 12) = 
-                   (random_vector_si[nbs][nbr].segment(12*Vs*t + row, 12)).transpose();
+                size_t row = 12*(x*Y*Z + y*Z + z);
+                R.block(row, 12*col, 12, 12) = 
+                    (random_vector_si[nbs][nbr].segment(12*Vs*t + row, 12)).
+                                                                   asDiagonal();
               }
             }
           }
-          Eigen::MatrixXcd res = R.adjoint()*M;
+          // multiplication with R^dagger and storing result in perambulator
+          std::vector<std::complex<double> > 
+                           vec1(12*dil_size*dil_size*dil_size*nb_of_inversions);
+          std::complex<double> zero(0.0, 0.0);
+          std::complex<double> one(1.0, 0.0);
+          std::string type = "C";
+          const int M = 12*dil_size*dil_size*dil_size;
+          const int N = nb_of_inversions;
+          const int K = 12*Vs;
+          Eigen::Matrix<std::complex<double>, Eigen::Dynamic, Eigen::Dynamic, 
+                                              Eigen::RowMajor> Rt = R.adjoint();
+          zgemm_(&type[0], &type[0], &M, &N, &K, &one, Rt.data(), &K, &vec[0], 
+                                                       &N, &zero, &vec1[0], &M);
           // resorting res into correct propagator order
           for(size_t col = 0; col < nb_of_inversions; col++)
-            for(size_t ev = 0; ev < dil_size*dil_size*dil_size; ++ev)  
-              for(size_t d = 0; d < 4; ++d)    
-                for(size_t c = 0; c < 3; ++c)    
-                  (perambulator[nbs][nbr][t])(12*ev+3*d+c, col) = 
-                                                            res(ev, 12*col+3*d+c);
+            for(size_t ev = 0; ev < 12*dil_size*dil_size*dil_size; ++ev)  
+              (perambulator[nbs][nbr][t])(ev, col) = 
+                   std::conj(vec1.at(ev + dil_size*dil_size*dil_size * 12*col));
         } // end of loop over sink time index
       } // end of loop over random sinks
     } // end of if else desision of sink type
   } // end of loop over sinks
+
   MPI_Barrier(MPI_COMM_WORLD);
   time1 = MPI_Wtime() - time1;
   if(myid == 0)

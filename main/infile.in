@@ -51,5 +51,5 @@ inversion_sink_number_d = 4
 inversion_sink_type_c   = F
 inversion_sink_number_c = 3
 
-outpath = ../../data2
+outpath = ../../data3
 inpath_ev = /data/LapHs/peram_gen_stoch_sink/data
