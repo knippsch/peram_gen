@@ -5,15 +5,17 @@ distance between configs = 8
 Ls = 4
 Lt = 4
 
-nb_ev = 8
+nb_ev = 4
 
-nb_rnd = 4
-id 0 seed 1337
-id 1 seed 29347324
-id 2 seed 29347324
-id 3 seed 1337
+nb_rnd = 5
+id 5 seed 1337
+id 6 seed 324345
+id 7 seed 29347324
+id 8 seed 345345
+id 9 seed 3462645
 
 verbose = 0
+endianness = little
 
 quarktype = u
 
@@ -24,9 +26,9 @@ inversion_source_number_v = 8
 inversion_source_type_d   = F
 inversion_source_number_d = 4
 
-nb_of_sinks = 6
+nb_of_sinks = 2
 
-seed = 234325
+seed = 0
 inversion_sink_type_t   = F
 inversion_sink_number_t = 4
 inversion_sink_type_s   = F
@@ -46,45 +48,5 @@ inversion_sink_number_d = 4
 inversion_sink_type_c   = F
 inversion_sink_number_c = 3
 
-seed = 92735
-inversion_sink_type_t   = F
-inversion_sink_number_t = 4
-inversion_sink_type_s   = B
-inversion_sink_number_s = 2
-inversion_sink_type_d   = F
-inversion_sink_number_d = 4
-inversion_sink_type_c   = F
-inversion_sink_number_c = 3
-
-seed = 90257203
-inversion_sink_type_t   = F
-inversion_sink_number_t = 4
-inversion_sink_type_s   = B
-inversion_sink_number_s = 4
-inversion_sink_type_d   = F
-inversion_sink_number_d = 4
-inversion_sink_type_c   = F
-inversion_sink_number_c = 3
-
-seed = 5423451
-inversion_sink_type_t   = F
-inversion_sink_number_t = 4
-inversion_sink_type_s   = I
-inversion_sink_number_s = 2
-inversion_sink_type_d   = F
-inversion_sink_number_d = 4
-inversion_sink_type_c   = F
-inversion_sink_number_c = 3
-
-seed = 190734
-inversion_sink_type_t   = F
-inversion_sink_number_t = 4
-inversion_sink_type_s   = I
-inversion_sink_number_s = 4
-inversion_sink_type_d   = F
-inversion_sink_number_d = 4
-inversion_sink_type_c   = F
-inversion_sink_number_c = 3
-
-outpath = ../../data
-inpath_ev = ../../data 
+outpath = ../../data2
+inpath_ev = /data/LapHs/peram_gen_stoch_sink/data

@@ -72,7 +72,7 @@ void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
   // reading eigenvectors from disk
   read_eigenvectors(); 
   // generating random vector for source
-  set_random_vector(param.rnd_id[0]);
+  set_random_vector(0);
 
   // generating random vectors for sink
   random_vector_si.resize(param.nb_of_sinks);
@@ -83,7 +83,7 @@ void LapH::distillery::initialise(const LapH::input_parameter& in_param) {
     if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
     random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
-    set_sink_random_vector(param.rnd_id[0], nbs, random_vector_si[nbs]);
+    set_sink_random_vector(0, nbs, random_vector_si[nbs]);
   }
 
   // is everything allocated?
@@ -161,13 +161,13 @@ void LapH::distillery::reset_all(const LapH::input_parameter& in_param){
   // source random vector
   for(size_t t = 0; t < Lt; ++t)
     random_vector[t] = Eigen::VectorXcd::Zero(4 * param.nb_ev);
-  set_random_vector(param.rnd_id[0]);
+  set_random_vector(0);
   // sink random vectors
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
     if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
     random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
-    set_sink_random_vector(param.rnd_id[0], nbs, random_vector_si[nbs]);
+    set_sink_random_vector(0, nbs, random_vector_si[nbs]);
   }
 
 }
@@ -208,13 +208,11 @@ void LapH::distillery::reset_perambulator_and_randomvector(const size_t rnd_id){
     if (!param.dilution_type_si[nbs][1].compare("F"))
       continue;
     random_vector_si[nbs] = Eigen::VectorXcd::Zero(volume);
-    set_sink_random_vector(param.rnd_id[rnd_id], nbs, random_vector_si[nbs]);
+    set_sink_random_vector(rnd_id, nbs, random_vector_si[nbs]);
   }
 
 }
 // -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
-// Creates the dilution lookup table. 
 // input:  dilution_size  -> size of dilution, e.g. block size or interlace size
 //         dilution_entry -> index of the dilution
 //         type           -> just the type of the dilution
@@ -399,7 +397,6 @@ void LapH::distillery::add_to_perambulator(
     // checking if smeared or stochastic sink must be computed
     if (!param.dilution_type_si[nbs][1].compare("F")){ // smeared sink
       // running over sink time index
-      #pragma omp parallel for
       for(size_t t = 0; t < T; ++t){ 
         Eigen::MatrixXcd vec = Eigen::MatrixXcd::Zero(dim_row, 
                                                             4*nb_of_inversions);
@@ -542,12 +539,18 @@ void LapH::distillery::write_perambulator_to_disk(const size_t rnd_id) {
       MPI_Reduce(&(perambulator_write[0]), 0,
                  2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
   
+    int kill_program = 0; // this is needed to savely kill the program if 
+                          // writing of perambulator fails
     // process 0 writes the data to disk
     if(myid == 0){
       // changing endianess
-      for (size_t i = 0; i < size_perambulator_entry; i++)
-        //perambulator_write[i] = swap_complex(perambulator_write[i]);
-        perambulator_write[i] = perambulator_write[i];
+      if(param.endianness == "little")
+        for (size_t i = 0; i < size_perambulator_entry; i++)
+          perambulator_write[i] = perambulator_write[i];
+      else
+        for (size_t i = 0; i < size_perambulator_entry; i++)
+          perambulator_write[i] = swap_complex(perambulator_write[i]);
+
       // data path
       std::string filename = param.outpath + "/perambulator";
       if(verbose) printf("writing perambulators from files:\n");
@@ -572,11 +575,22 @@ void LapH::distillery::write_perambulator_to_disk(const size_t rnd_id) {
         exit(0);
       }
       if(verbose) printf("\tread file: %s\n", outfile);
-      fwrite(&(perambulator_write[0]), sizeof(std::complex<double>),
-          size_perambulator_entry, fp);
+      size_t peram_write_size = fwrite(&(perambulator_write[0]), 
+                                       sizeof(std::complex<double>),
+                                       size_perambulator_entry, fp);
+      if(peram_write_size != size_perambulator_entry){
+        std::cout << "\n\nWriting Perambulator failed - exit program\n\n" 
+                  << std::endl;
+        kill_program = 1;
+      }
       fclose(fp);
      
     } // if for process 0 ends here
+    MPI_Bcast(&kill_program, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    if(kill_program){ // kill program in case of write failure of perambulator
+      MPI_Finalize();
+      exit(0);
+    }
   } // for loop over sinks ends here
   MPI_Barrier(MPI_COMM_WORLD);
   time1 = MPI_Wtime() - time1;
@@ -611,11 +625,17 @@ void LapH::distillery::set_random_vector(const size_t rnd_id) {
     }
   }
 
-  // writing random vector to disc
+  // writing random vector to disc ---------------------------------------------
   int myid = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  int kill_program = 0; // flag to check if data were correctly written
   if(myid == 0)
-    write_random_vector_to_disk(rnd_id);
+    kill_program = write_random_vector_to_disk(rnd_id);
+  MPI_Bcast(&kill_program, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if(kill_program){ // kill program in case of write failure of rnd vecs
+    MPI_Finalize();
+    exit(0);
+  }
 
   delete[] rnd;
 }
@@ -659,7 +679,13 @@ void LapH::distillery::read_random_vector() {
       exit(0);
     }   
     check_read_in += fread(rnd_vec_read, sizeof(std::complex<double>),
-        Lt*rnd_vec_length, fp);
+                           Lt*rnd_vec_length, fp);
+    if(check_read_in != Lt*rnd_vec_length){
+      std::cout << "Failed to read random vectors - program aborted!" 
+                << std::endl;
+      MPI_Finalize();
+      exit(0);
+    }
     // copy into matrix structure
     for(int t = 0; t < Lt; t++){
       for(int row_i = 0; row_i < rnd_vec_length; ++row_i){
@@ -673,7 +699,7 @@ void LapH::distillery::read_random_vector() {
 }
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
-void LapH::distillery::write_random_vector_to_disk(size_t rnd_id){
+int LapH::distillery::write_random_vector_to_disk(size_t rnd_id){
 
   char outfile[400];
   FILE *fp = NULL;
@@ -685,13 +711,16 @@ void LapH::distillery::write_random_vector_to_disk(size_t rnd_id){
   // copy from eigen structure into intermediate memory
   std::complex<double>* rnd_vec_write =
       new std::complex<double>[rnd_vec_length];
-  for(size_t t = 0; t < Lt; ++t)
-    for(size_t row_i = 0; row_i < 4 * number_of_eigen_vec; ++row_i)
-      //rnd_vec_write[row_i + t * rnd_vec_length/Lt] = 
-      //                                    swap_complex(random_vector[t](row_i));
-      rnd_vec_write[row_i + t * rnd_vec_length/Lt] = 
-                                          random_vector[t](row_i);
-
+  if(param.endianness == "little")
+    for(size_t t = 0; t < Lt; ++t)
+      for(size_t row_i = 0; row_i < 4 * number_of_eigen_vec; ++row_i)
+        rnd_vec_write[row_i + t * rnd_vec_length/Lt] = 
+                                            random_vector[t](row_i);
+  else
+    for(size_t t = 0; t < Lt; ++t)
+      for(size_t row_i = 0; row_i < 4 * number_of_eigen_vec; ++row_i)
+        rnd_vec_write[row_i + t * rnd_vec_length/Lt] = 
+                                            swap_complex(random_vector[t](row_i));
   // creating name and path of outfile
   std::string filename = param.outpath + "/randomvector";
   if(verbose) printf("writing random vector to files:\n");
@@ -709,14 +738,16 @@ void LapH::distillery::write_random_vector_to_disk(size_t rnd_id){
   }   
   check_read_in += fwrite(rnd_vec_write, sizeof(std::complex<double>),
                           rnd_vec_length, fp);
+  int kill_program = 0;
   if(check_read_in != (int) rnd_vec_length){
-    std::cout << "failed to write random vector: "
+    kill_program = 1;
+    std::cout << "\n\nfailed to write random vector: "
               << outfile << "\n" << std::endl;
-    exit(0);
   }   
   fclose(fp);
   // delete intermediate memory
   delete[] rnd_vec_write;
+  return kill_program;
 
 } 
 // -----------------------------------------------------------------------------
@@ -741,16 +772,16 @@ void LapH::distillery::copy_to_V(const std::complex<double>* const eigen_vec,
 
           size_t i = 3*( ((X*px + x)*Y*nproc_y + (Y*py + y))*Z*nproc_z  
                                                              +  Z*pz + z) + c;
-          // byte swap to change endianess
-          //(V[t])(j, nev) = swap_complex(eigen_vec[i]);
-          (V[t])(j, nev) = eigen_vec[i];
+          if(param.endianness == "little")
+            (V[t])(j, nev) = eigen_vec[i];
+          else
+            (V[t])(j, nev) = swap_complex(eigen_vec[i]);
           j++;
 
         }
       }
     }
   }
-
 }
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
@@ -778,7 +809,8 @@ void LapH::distillery::read_eigenvectors(){
     else printf("\treading eigenvectors\n");
     fflush(stdout);
   }
-
+  // variables for checking trace and sum of v^daggerv
+  std::complex<double> trace_s(.0,.0), trace_r(.0,.0), sum_r(.0,.0), sum_s(.0,.0);
   // running over all timeslices on this process
   for(size_t t = 0; t < T; t++){
 
@@ -793,7 +825,15 @@ void LapH::distillery::read_eigenvectors(){
     if (infile) {
       for (size_t nev = 0; nev < number_of_eigen_vec; ++nev) {
         // reading the full vector
-        infile.read( (char*) eigen_vec, 2*dim_row*sizeof(double));
+        infile.read((char*) eigen_vec, 2*dim_row*sizeof(double));
+
+        //if(infile.gcount() != int(2*dim_row*sizeof(double))){
+        if(!infile){
+          std::cout << "\n\nreading eigenvectors failed at t = " << real_t 
+                    << " and ev = " << nev << std::endl;
+          MPI_Finalize();
+          exit(0);
+        }
         // copying the correct components into V
         copy_to_V(eigen_vec, t, nev);
       }
@@ -803,16 +843,25 @@ void LapH::distillery::read_eigenvectors(){
       exit(0);
     }
     infile.close();
-
-    // small test of trace and sum over the eigen vector matrix!
-    if(verbose){
-      std::cout << "trace of V^d*V on t = " << t << ":\t"
-          << (V[t].adjoint() * V[t]).trace() << std::endl;
-      std::cout << "sum over all entries of V^d*V on t = " << t << ":\t"
-          << (V[t].adjoint() * V[t]).sum() << std::endl;
-    }
+    // computing trace and sum for check!
+    trace_s += (V[t].adjoint() * V[t]).trace();
+    sum_s += (V[t].adjoint() * V[t]).sum();
   }
   delete[] eigen_vec;
+
+  // checking the trace and the sum of v^daggerv -------------------------------
+  MPI_Allreduce(&trace_s, &trace_r, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&sum_s, &sum_r, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  if((fabs(trace_r.real() - Lt*number_of_eigen_vec) > 10e-6) ||
+     (fabs(sum_r.real()   - Lt*number_of_eigen_vec) > 10e-6) ||
+     (fabs(trace_r.imag()) > 10e-6) || (fabs(sum_r.imag()) > 10e-6) ){
+    if(myid == 0)
+      std::cout << "\n\nTrace of sum of V^daggerV is not correct! "
+                << "- abort program\n Sum = " << sum_r << " Trace = " 
+                << trace_r << "\n" << std::endl;
+    MPI_Finalize();
+    exit(0);
+  }
 
   MPI_Barrier(MPI_COMM_WORLD);
   time1 = MPI_Wtime() - time1;

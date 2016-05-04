@@ -97,9 +97,9 @@ private:
   void set_sink_random_vector(const size_t rnd_id, const size_t sink_id, 
                               Eigen::VectorXcd& out);
   void read_random_vector();
-  void write_random_vector_to_disk(const size_t rnd_id);
   void copy_to_V(const std::complex<double>* const eigen_vec, const int t,
                  const int nev);
+  int write_random_vector_to_disk(const size_t rnd_id);
   // -------------------------- DATA -------------------------------------------
   Eigen::MatrixXcd* V;                // memory eigensystem
   std::vector<std::vector<

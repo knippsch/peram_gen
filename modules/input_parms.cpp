@@ -31,6 +31,7 @@ LapH::input_parameter::input_parameter(const input_parameter& other){
   Lt = other.Lt;
   nb_ev = other.nb_ev;
   verbose = other.verbose;
+  endianness = other.endianness;
 
   nb_rnd = other.nb_rnd;
   if (rnd_id != NULL)
@@ -83,6 +84,7 @@ LapH::input_parameter& LapH::input_parameter::operator=
     Lt = other.Lt;
     nb_ev = other.nb_ev;
     verbose = other.verbose;
+    endianness = other.endianness;
     
     nb_rnd = other.nb_rnd;
     if (rnd_id != NULL)
@@ -180,6 +182,13 @@ void LapH::input_parameter::check_input_parameters(){
        MPI_Finalize();
        std::exit(0);
   }
+  if(endianness != "little" && endianness != "big"){
+    std::cerr << "\n\nEndianness in infile must be 'little' or 'big'!\n" 
+              << "Aborting...\n" << std::endl;
+       MPI_Finalize();
+       std::exit(0);
+  }
+     
   check_dilution_input(dilution_type_so[0], Lt, dilution_size_so[0]); 
   check_dilution_input(dilution_type_so[1], nb_ev, dilution_size_so[1]); 
   check_dilution_input(dilution_type_so[2], 4, dilution_size_so[2]);
@@ -216,17 +225,17 @@ void LapH::input_parameter::parse_input_file(int argc, char *argv[]) {
       break;
     }
   }
-  //int myid = 0;
-  //MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-  //if(myid == 0){
-    if(opt < 0) {
+  int myid = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  if(opt < 0) {
+    if(myid == 0)
       std::cout << "No input file specified, trying infile.in" << std::endl;
-      sprintf(infilename, "infile.in");
-    } else {
-      sprintf(infilename, "%s", argv[opt]);
+    sprintf(infilename, "infile.in");
+  } else {
+    sprintf(infilename, "%s", argv[opt]);
+    if(myid == 0)
       std::cout << "Trying input file " << infilename << std::endl;
-    }
-  //}
+  }
   // open file for reading
   if ((infile = fopen(infilename, "r")) == NULL ) {
     std::cerr << "Could not open file " << infilename << std::endl;
@@ -254,6 +263,9 @@ void LapH::input_parameter::parse_input_file(int argc, char *argv[]) {
     reader += fscanf(infile, "id %i seed %i\n", rnd_id+i, seed+i);
   // verbosity
   reader += fscanf(infile, "verbose = %zu\n", &( verbose));
+  // endianess
+  reader += fscanf(infile, "endianness = %255s\n", readin);
+  endianness.assign(readin);
   // quarktype
   reader += fscanf(infile, "quarktype = %255s\n", readin);
   quarktype.assign(readin);
@@ -320,16 +332,20 @@ void LapH::input_parameter::parse_input_file(int argc, char *argv[]) {
   // checking input parameters
   check_input_parameters();
   check_and_create_filenames();
+  if(myid == 0)
+    print_options();
 }
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 void LapH::input_parameter::print_options() {
 
-  std::cout << "config = " <<  config << std::endl;
+  std::cout << "\n\nconfig = " <<  config << std::endl;
   std::cout << "Ls = " <<  Ls << ", Lt = " <<  Lt << std::endl;
   std::cout << "nb_ev = " <<  nb_ev << ", nb_rnd = " <<  nb_rnd << std::endl;
-  std::cout << "seed = " <<  seed << std::endl;
+  for(size_t i = 0; i < nb_rnd; i++)
+    std::cout << "rnd_id = " << rnd_id[i] << " seed = " <<  seed[i] << std::endl;
   std::cout << "verbose = " <<  verbose << std::endl;
+  std::cout << "endianness = " << endianness << std::endl;
   std::cout << "quarktype = " <<  quarktype << std::endl;
   std::cout << "inversion source time: " <<  dilution_type_so[0] << " " 
             <<  dilution_size_so[0] << std::endl;
@@ -350,7 +366,7 @@ void LapH::input_parameter::print_options() {
               <<  dilution_size_si[nbs][3] << "\n" << std::endl;
   }
   std::cout << "output path: " <<  outpath << std::endl;
-  std::cout << "input path ev: " <<  inpath_ev << std::endl;
+  std::cout << "input path ev: " <<  inpath_ev << "\n\n" <<  std::endl;
 
 }
 // -----------------------------------------------------------------------------

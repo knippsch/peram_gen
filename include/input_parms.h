@@ -77,6 +77,7 @@ public:
   int* rnd_id;                     // id of random vectors
   int* seed;                       // seeds for random vector generation
   std::vector<int> seed_si;        // seeds for sinkd random vector generation
+  std::string endianness;          // needed for endianess change 
 
   std::string quarktype;           // quark type: u,d,s,c -> for naming outfiles
   std::string outpath;             // path to write everything
