@@ -586,9 +586,12 @@ void LapH::distillery::write_perambulator_to_disk(const size_t rnd_id) {
       // process 0 writes the data to disk
       if(myid == 0){
         // changing endianess
-        for (size_t i = 0; i < size_perambulator_entry; i++)
-          //perambulator_write[i] = swap_complex(perambulator_write[i]);
-          perambulator_write[i] = perambulator_write[i];
+        if(param.endianness == "little")
+          for (size_t i = 0; i < size_perambulator_entry; i++)
+            perambulator_write[i] = perambulator_write[i];
+        else
+          for (size_t i = 0; i < size_perambulator_entry; i++)
+            perambulator_write[i] = swap_complex(perambulator_write[i]);
         // data path
         std::string filename = param.outpath + "/perambulator";
         if(verbose) printf("writing perambulators from files:\n");
