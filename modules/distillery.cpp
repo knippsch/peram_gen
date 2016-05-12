@@ -531,111 +531,112 @@ void LapH::distillery::add_to_perambulator(
 // -----------------------------------------------------------------------------
 void LapH::distillery::write_perambulator_to_disk(const size_t rnd_id) {
 
-  int myid = 0;
+  int myid = 0, nb_procs = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  MPI_Comm_size(MPI_COMM_WORLD, &nb_procs);
   MPI_Barrier(MPI_COMM_WORLD); 
   double time1 = MPI_Wtime();
 
   char outfile[400];
-  FILE *fp = NULL;
   const size_t Lt = param.Lt;
   const size_t T = Lt/tmLQCD_params->nproc_t;
-  const size_t verbose = param.verbose;
-  const size_t number_of_inversions = param.dilution_size_so[0] *
-                                      param.dilution_size_so[1] *
-                                      param.dilution_size_so[2] ;
+
+  // create communicator for processes sharing the same time slices ------------
+  MPI_Comm ts_comm;
+  MPI_Comm_split(MPI_COMM_WORLD, tmLQCD_params->proc_coords[0], myid, &ts_comm);
+  int myid_t = 0;
+  MPI_Comm_rank(ts_comm, &myid_t);
+  // create communicator for writing the data in parallel
+  MPI_Comm write_comm;
+  MPI_Comm_split(MPI_COMM_WORLD, myid_t, myid, &write_comm);
+  int myid_write = 0;
+  MPI_Comm_rank(write_comm, &myid_write);
 
 
-  // loop over all sinks
+  // loops over all sinksa -----------------------------------------------------
   for(size_t nbs = 0; nbs < param.nb_of_sinks; nbs++){
-    const size_t number_of_eigen_vec = param.nb_ev;
-    size_t sink_size = 4*number_of_eigen_vec;
-    if (param.dilution_type_si[nbs][1].compare("F"))
-      sink_size = 12*param.dilution_size_si[nbs][1] *
-                     param.dilution_size_si[nbs][1] *
-                     param.dilution_size_si[nbs][1];
-
-    const size_t size_perambulator_entry = number_of_inversions*Lt*sink_size;
-
-    // memory for reading perambulators and setting it to zero
     for(size_t nbr = 0; nbr < param.nb_of_sink_rnd_vec[nbs]; nbr++){
-      std::vector<std::complex<double> > perambulator_write(
-                       size_perambulator_entry, std::complex<double>(0.0, 0.0));
-  
-      // copy perambulator into writing array
-      for(size_t t = 0; t < T; ++t){
-        size_t t_global = T*tmLQCD_params->proc_coords[0] + t;
-        size_t t_h = t_global*sink_size; // helper index
-        for(size_t row_i = 0; row_i < sink_size; ++row_i){
-          size_t row_i_h = (row_i + t_h) * number_of_inversions; // helper index
-          for(size_t col_i = 0; col_i < number_of_inversions; ++col_i){
-            perambulator_write[row_i_h + col_i] = 
-                                        perambulator[nbs][nbr][t](row_i, col_i);
-          }
-        }
-      }
-      // Summing all the perambulator data on process 0
-      if(myid == 0)
-        MPI_Reduce(MPI_IN_PLACE, &(perambulator_write[0]), 
-             2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-      else 
-        MPI_Reduce(&(perambulator_write[0]), 0,
-             2*size_perambulator_entry, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
-      int kill_program = 0; // flag to check if program should be terminated    
-      // process 0 writes the data to disk
-      if(myid == 0){
-        // changing endianess
-        if(param.endianness == "little")
-          for (size_t i = 0; i < size_perambulator_entry; i++)
-            perambulator_write[i] = perambulator_write[i];
-        else
-          for (size_t i = 0; i < size_perambulator_entry; i++)
-            perambulator_write[i] = swap_complex(perambulator_write[i]);
-        // data path
-        std::string filename = param.outpath + "/perambulator";
-        if(verbose) printf("writing perambulators from files:\n");
-        else printf("\twriting perambulator\n");
-        // create perambulator file name
-        sprintf(outfile,
-          "%s.rndvecnb%02d.%s.Tso%s%04d.Vso%s%04d.Dso%s%01d.Tsi%s%04d." \
-          "Ssi%s%04d.Dsi%s%01d.Csi%s%01d.smeared%01d.%05d",
-          filename.c_str(), (int) param.rnd_id[rnd_id], param.quarktype.c_str(),
-          param.dilution_type_so[0].c_str(), (int) param.dilution_size_so[0], 
-          param.dilution_type_so[1].c_str(), (int) param.dilution_size_so[1], 
-          param.dilution_type_so[2].c_str(), (int) param.dilution_size_so[2],
-          param.dilution_type_si[nbs][0].c_str(), 
-          (int) param.dilution_size_si[nbs][0], 
-          param.dilution_type_si[nbs][1].c_str(), 
-          (int) param.dilution_size_si[nbs][1], 
-          param.dilution_type_si[nbs][2].c_str(), 
-          (int) param.dilution_size_si[nbs][2], 
-          param.dilution_type_si[nbs][3].c_str(), 
-          (int) param.dilution_size_si[nbs][3], 
-          (int) nbr, (int) param.config);
-     
-        // writing data
-        if((fp = fopen(outfile, "wb")) == NULL){
-          std::cout << "failed to open file: " << outfile << "\n" << std::endl;
-          exit(0);
+      // memory for writing - The resizing is necesseray because only the 
+      // relevant processes do have the correct memory
+      std::vector<std::complex<double> > write_peram;
+      if(myid_t == 0)
+        write_peram.resize(perambulator[nbs][nbr][0].size()*T);
+
+      // Summing all perambulator data -----------------------------------------
+      for(size_t t = 0; t < T; ++t){
+        // convert Eigen matrix to raw data pointer
+        std::complex<double>* peram_send = &(perambulator[nbs][nbr][t](0,0));
+        if(myid_t == 0)
+          MPI_Reduce(MPI_IN_PLACE, peram_send, 
+                     2*perambulator[nbs][nbr][t].size(), MPI_DOUBLE, MPI_SUM, 
+                     0, ts_comm);
+        else 
+          MPI_Reduce(peram_send, 0,
+                     2*perambulator[nbs][nbr][t].size(), MPI_DOUBLE, MPI_SUM, 
+                     0, ts_comm);
+        MPI_Barrier(MPI_COMM_WORLD); 
+        // copy to writing array and swap endianness if neccessary -------------
+        if(myid_t == 0){
+          if(param.endianness == "little")
+            for(int row = 0; row < perambulator[nbs][nbr][t].rows(); row++){
+              int row_off = perambulator[nbs][nbr][t].size()*t + 
+                            row * perambulator[nbs][nbr][t].cols();
+              for(int col = 0; col < perambulator[nbs][nbr][t].cols(); col++) 
+                write_peram[row_off + col] = 
+                                (perambulator[nbs][nbr][t](row, col));
+            }
+          else
+            for(int row = 0; row < perambulator[nbs][nbr][t].rows(); row++){
+              int row_off = perambulator[nbs][nbr][t].size()*t + 
+                            row * perambulator[nbs][nbr][t].cols();
+              for(int col = 0; col < perambulator[nbs][nbr][t].cols(); col++) 
+                write_peram[row_off + col] = 
+                              swap_complex(perambulator[nbs][nbr][t](row, col));
+            }
         }
-        if(verbose) printf("\tread file: %s\n", outfile);
-        size_t peram_write_size = fwrite(&(perambulator_write[0]), 
-                                         sizeof(std::complex<double>),
-                                         size_perambulator_entry, fp);
-        if(peram_write_size != size_perambulator_entry){
-          std::cout << "\n\nWriting Perambulator failed - exit program\n\n" 
-                    << std::endl;
-          kill_program = 1;
-        }
-        fclose(fp);
-       
-      } // if for process 0 ends here
-      MPI_Bcast(&kill_program, 1, MPI_INT, 0, MPI_COMM_WORLD);
-      if(kill_program){ // kill program in case of write failure of perambulator
-        MPI_Finalize();
-        exit(0);
       }
+      // creating perambulator file name ---------------------------------------
+      std::string filename = param.outpath + "/perambulator";
+      sprintf(outfile,
+        "%s.rndvecnb%02d.%s.Tso%s%04d.Vso%s%04d.Dso%s%01d.Tsi%s%04d." \
+        "Ssi%s%04d.Dsi%s%01d.Csi%s%01d.smeared%01d.%05d",
+        filename.c_str(), (int) param.rnd_id[rnd_id], param.quarktype.c_str(),
+        param.dilution_type_so[0].c_str(), (int) param.dilution_size_so[0], 
+        param.dilution_type_so[1].c_str(), (int) param.dilution_size_so[1], 
+        param.dilution_type_so[2].c_str(), (int) param.dilution_size_so[2],
+        param.dilution_type_si[nbs][0].c_str(), 
+        (int) param.dilution_size_si[nbs][0], 
+        param.dilution_type_si[nbs][1].c_str(), 
+        (int) param.dilution_size_si[nbs][1], 
+        param.dilution_type_si[nbs][2].c_str(), 
+        (int) param.dilution_size_si[nbs][2], 
+        param.dilution_type_si[nbs][3].c_str(), 
+        (int) param.dilution_size_si[nbs][3], 
+        (int) nbr, (int) param.config);
+      if(myid==0) printf("\twriting perambulator to file: %s\n", outfile);
+
+      // writing data in parallel, but only with processes wich have the data --
+      if(myid_t == 0){
+        MPI_File fh;
+        MPI_Status status;
+        MPI_File_open(write_comm, outfile, 
+                      MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &fh);
+        int my_offset = myid_write*write_peram.size()*2*sizeof(double);
+        MPI_File_seek(fh, my_offset, MPI_SEEK_SET);
+        MPI_File_write(fh, &(write_peram[0]), 2*write_peram.size(), 
+                       MPI_DOUBLE, &status);
+        MPI_File_close(&fh);
+        // check that all data have been written
+        int size_of_written_data = 0;
+        MPI_Get_count(&status, MPI_DOUBLE, &size_of_written_data);
+        if(size_of_written_data != int(2*write_peram.size()))
+          std::cout << "\n\n\t\tERROR\n\n" 
+                    << "\t\tNot all perambulator data were written for " 
+                    << outfile << "\n\n" << std::endl;
+      }
+      MPI_Barrier(MPI_COMM_WORLD);
+
     } // for loop over random vectors ends here
   } // for loop over sinks ends here
   MPI_Barrier(MPI_COMM_WORLD);
