@@ -835,7 +835,7 @@ int LapH::distillery::write_random_vector_to_disk(size_t rnd_id){
 void LapH::distillery::read_eigenvectors(){
 
   MPI_Barrier(MPI_COMM_WORLD); 
-  double time1 = MPI_Wtime(), time2 = MPI_Wtime();
+  double time1 = MPI_Wtime(), time2 = MPI_Wtime(), time3 = MPI_Wtime();
 
   const size_t Ls = param.Ls;
   const size_t Lt = param.Lt;
@@ -911,6 +911,7 @@ void LapH::distillery::read_eigenvectors(){
     // reading and distributing data
     for (size_t nev = 0; nev < number_of_eigen_vec; ++nev) {
       size_t j = 0;    
+      time3 = MPI_Wtime();// TODO: Just for testing
       for(size_t x = 0; x < X; x++){
         for(size_t y = 0; y < Y; y++){
           my_offset = 16*(dim_row*nev + 3*((X*px + x)*Y*nproc_y + 
@@ -926,6 +927,11 @@ void LapH::distillery::read_eigenvectors(){
           }
         }
       }
+      // TODO: This is merely a test
+      MPI_Barrier(MPI_COMM_WORLD);
+      if(myid == 0)
+        std::cout << "\t\tTime for reading one EV on timeslice " << real_t 
+                  << " : " << MPI_Wtime() - time3 << std::endl;
     }
     MPI_File_close(&fh);
     trace_s += (V[t].adjoint() * V[t]).trace();
@@ -933,7 +939,7 @@ void LapH::distillery::read_eigenvectors(){
     MPI_Barrier(MPI_COMM_WORLD);
     // TODO: This is merely a test
     if(myid == 0)
-      std::cout << "\tTime for eigenvector reading on timeslice " << real_t 
+      std::cout << "\tTime for EV reading on timeslice " << real_t 
                 << " : " << MPI_Wtime() - time2 << std::endl;
   }
 
