@@ -14,6 +14,7 @@
 #include "ranlxs.h"
 #include "input_parms.h"
 #include "tmLQCD.h"
+#include "typedefs.h"
 
 // from twisted mass code
 #ifdef __cplusplus                                                              
@@ -99,6 +100,7 @@ public:
 private:
   DISALLOW_COPY_AND_ASSIGN(distillery); // no copy nor assignment
   void read_eigenvectors();
+  size_t create_eigenvector_chunks(std::vector<ev_chunk>& ev_chunks);
   void set_random_vector(const size_t rnd_id);
   void set_sink_random_vector(const size_t rnd_id, const size_t sink_id, 
                               const size_t rnd_id_si, Eigen::VectorXcd& out);
