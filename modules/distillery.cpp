@@ -876,6 +876,8 @@ void LapH::distillery::read_eigenvectors(){
   MPI_Comm ts_comm;
   MPI_Comm_split(MPI_COMM_WORLD, tmLQCD_params->proc_coords[0], 
                  myid, &ts_comm );
+  int myid_t = 0;
+  MPI_Comm_rank(ts_comm, &myid_t);
 
   // variables for checking trace and sum of v^daggerv
   std::complex<double> trace_s(.0,.0), trace_r(.0,.0), 
@@ -890,7 +892,7 @@ void LapH::distillery::read_eigenvectors(){
     char name[200];
     sprintf(name, "%s/eigenvectors.%04d.%03d", 
                   param.inpath_ev.c_str(), (int) param.config, real_t);
-    if(verbose) std::cout << "Reading file: " << name << std::endl;
+    if(myid_t == 0) std::cout << "Reading file: " << name << std::endl;
     // open file and check if it worked
     file_open_error = MPI_File_open(ts_comm, name, MPI_MODE_RDONLY, 
                                     MPI_INFO_NULL, &fh);
@@ -909,6 +911,7 @@ void LapH::distillery::read_eigenvectors(){
       MPI_Abort(ts_comm, file_open_error);
     }
     // reading and distributing data
+    if(myid_t == 0) std::cout << "starting to read eigenvectors!" << std::endl;
     for (size_t nev = 0; nev < number_of_eigen_vec; ++nev) {
       size_t j = 0;    
       time3 = MPI_Wtime();// TODO: Just for testing
@@ -917,7 +920,7 @@ void LapH::distillery::read_eigenvectors(){
           my_offset = 16*(dim_row*nev + 3*((X*px + x)*Y*nproc_y + 
                                                 (Y*py + y))*Z*nproc_z + 3*Z*pz);
           MPI_File_seek(fh, my_offset, MPI_SEEK_SET);
-          MPI_File_read(fh, &eigen_vec[0], 2*3*Z, MPI_DOUBLE, &status);
+          MPI_File_read_all(fh, &eigen_vec[0], 2*3*Z, MPI_DOUBLE, &status);
           for(size_t i = 0; i < 3*Z; i++){      
             if(param.endianness == "little")
               (V[t])(j, nev) = eigen_vec[i];
