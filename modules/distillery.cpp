@@ -835,7 +835,7 @@ int LapH::distillery::write_random_vector_to_disk(size_t rnd_id){
 void LapH::distillery::read_eigenvectors(){
 
   MPI_Barrier(MPI_COMM_WORLD); 
-  double time1 = MPI_Wtime(), time2 = MPI_Wtime(), time3 = MPI_Wtime();
+  double time1 = MPI_Wtime();
 
   const int Ls = param.Ls;
   const int Lt = param.Lt;
@@ -879,7 +879,6 @@ void LapH::distillery::read_eigenvectors(){
   // running over all timeslices on this process -------------------------------
   for(int t = 0; t < T; t++){
 
-    time2 = MPI_Wtime();// TODO: Just for testing
     // setting up filename
     const int real_t = T*tmLQCD_params->proc_coords[0] + t;
     char name[200];
@@ -903,112 +902,47 @@ void LapH::distillery::read_eigenvectors(){
   
       MPI_Abort(ts_comm, file_open_error);
     }
-    
-    // reading and distributing data -------------------------------------------
-    if(myid_t == 0) std::cout << "starting to read eigenvectors!" << std::endl;
-      time3 = MPI_Wtime();// TODO: Just for testing
-MPI_Barrier(ts_comm);
-// creating new MPI datatype ---------------------------------------------------
-MPI_Datatype newtype;
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Old Try
-
-int array_of_sizes[4] = {number_of_eigen_vec, Ls, Ls, 2*3*Ls};
-int array_of_subsizes[4] = {1, nproc_x, nproc_y, nproc_z};
-
-int distribs[4] = {MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK};
-int dargs[4] = {MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG};
-
-//for(int id = 0; id < nb_ranks; id++){
-//  if(id == myid){
-//    std::cout << "I am process: " << myid << std::endl;
-//    std::cout << "t: "   << T*tmLQCD_params->proc_coords[0] + t << std::endl;
-//    std::cout << distribs[0] << " " << distribs[1] << " "
-//              << distribs[2] << " "<< distribs[3] << " "
-//              << dargs[0] << " " << dargs[1] << " " 
-//              << dargs[2] << " " << dargs[3] << " " << std::endl;
-//    std::cout << "\n\n" << std::endl;
-//  }
-//  MPI_Barrier(MPI_COMM_WORLD);
-//}
-
-MPI_Type_create_darray(nb_procs_t, myid_t, 4, array_of_sizes, distribs, dargs, array_of_subsizes, MPI_ORDER_C, MPI_DOUBLE, &newtype);
-MPI_Type_commit(&newtype);
-
-
-////////////////////////////////////////////////////////////////////////////////
-
-// New Try
-
-
-
-
-
-
-
-
-
-
-
-
-char datarep[] = "native";
-MPI_File_set_view(fh, 0, MPI_DOUBLE, newtype, datarep, MPI_INFO_NULL);
-MPI_Barrier(ts_comm);
-
-
-// reading data ---------------------------------------------------------------
-std::vector<std::complex<double> > eigen_vec(number_of_eigen_vec*3*Z*Y*Z, std::complex<double>(0.0,0.0));
-MPI_Status status;
-MPI_File_read_all(fh, eigen_vec.data(), 2*3*Z*Y*X*number_of_eigen_vec, MPI_DOUBLE, &status);
-MPI_File_close(&fh);
-
-
-// check if there was a problem while reading data
-if(status.MPI_ERROR != MPI_SUCCESS)
-  std::cout << "\n\n\nError while reading on process: " << myid 
-            << " " << status.MPI_SOURCE << " " << status.MPI_TAG
-            << " " << status.MPI_ERROR << "\n\n" << std::endl;
-// TODO: just a rest of how many data were written
-int size_of_written_data = 0;
-MPI_Get_count(&status, MPI_DOUBLE, &size_of_written_data);
-std::cout << "process " << myid << " read " << size_of_written_data 
-          << " bytes! It should have read " << number_of_eigen_vec*2*3*Z*Y*X 
-          << std::endl;
-
-copy_to_V(eigen_vec, t);
-
-for(int id = 0; id < nb_ranks; id++){
-  if(id == myid && real_t == 0){
-    std::cout << "\n\n\t myid: " << myid << std::endl;
-    std::cout << "T: "   << T*tmLQCD_params->proc_coords[0] 
-              << "\tX: " << X*tmLQCD_params->proc_coords[1]
-              << "\tY: " << Y*tmLQCD_params->proc_coords[2] 
-              << "\tZ: " << Z*tmLQCD_params->proc_coords[3] << std::endl;
-    for(int row = 0; row < V[t].rows(); row++)
-      for(int col = 0; col < V[t].cols(); col++)
-        std::cout << V[t](row, col) << std::endl;
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
-}
-
-    // TODO: This is merely a test
     MPI_Barrier(ts_comm);
-    if(myid == 0)
-      std::cout << "\t\tTime for reading eigenvectors on timeslice " 
-                << real_t << " : " << MPI_Wtime() - time3 << std::endl;
-    // compute the trace and sum of v^daggerv --------------
+
+    // creating new MPI datatype -----------------------------------------------
+    MPI_Datatype newtype;
+    
+    int array_of_sizes[4] = {number_of_eigen_vec, Ls, Ls, 2*3*Ls};
+    int array_of_subsizes[4] = {1, nproc_x, nproc_y, nproc_z};
+    int distribs[4] = {MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK, 
+                       MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK};
+    int dargs[4] = {MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG, 
+                    MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG};
+    MPI_Type_create_darray(nb_procs_t, myid_t, 4, array_of_sizes, distribs, 
+                   dargs, array_of_subsizes, MPI_ORDER_C, MPI_DOUBLE, &newtype);
+    MPI_Type_commit(&newtype);
+    char datarep[] = "native";
+    MPI_File_set_view(fh, 0, MPI_DOUBLE, newtype, datarep, MPI_INFO_NULL);
+    MPI_Barrier(ts_comm);
+
+
+    // reading data ------------------------------------------------------------
+    std::vector<std::complex<double> > eigen_vec(number_of_eigen_vec*3*Z*Y*Z, 
+                                                 std::complex<double>(0.0,0.0));
+    MPI_Status status;
+    MPI_File_read_all(fh, eigen_vec.data(), 2*3*Z*Y*X*number_of_eigen_vec, 
+                      MPI_DOUBLE, &status);
+    MPI_File_close(&fh);
+    // check if there was a problem while reading data
+    if(status.MPI_ERROR != MPI_SUCCESS)
+      std::cout << "\n\n\nError while reading on process: " << myid 
+                << " " << status.MPI_SOURCE << " " << status.MPI_TAG
+                << " " << status.MPI_ERROR << "\n\n" << std::endl;
+    
+    copy_to_V(eigen_vec, t);
+
+    // compute the trace and sum of v^daggerv 
     trace_s += (V[t].adjoint() * V[t]).trace();
     sum_s += (V[t].adjoint() * V[t]).sum();
     MPI_Barrier(ts_comm);
-    // TODO: This is merely a test
-    if(myid == 0)
-      std::cout << "\tTime for EV reading on timeslice " << real_t 
-                << " : " << MPI_Wtime() - time2 << std::endl;
   }
 
-  // checking trace and sum of v^dagger v ---------------------------------------
+  // checking trace and sum of v^dagger v --------------------------------------
   MPI_Allreduce(&trace_s, &trace_r, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&sum_s, &sum_r, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   if((fabs(trace_r.real() - Lt*number_of_eigen_vec) > 10e-6) ||
@@ -1026,24 +960,6 @@ for(int id = 0; id < nb_ranks; id++){
   time1 = MPI_Wtime() - time1;
   if(myid == 0)
     std::cout << "\tTime for eigenvector reading: " << time1 << std::endl;
-
-// TODO: Test to check if data are correctly read
-if(myid == 0) std::cout << "\n\n" << std::endl;
-for(int id = 0; id < nb_ranks; id++){
-  if(id == myid){
-    std::cout << "I am process: " << myid << std::endl;
-    std::cout << "T: "   << T*tmLQCD_params->proc_coords[0] 
-              << "\tX: " << X*tmLQCD_params->proc_coords[1]
-              << "\tY: " << Y*tmLQCD_params->proc_coords[2] 
-              << "\tZ: " << Z*tmLQCD_params->proc_coords[3] << std::endl;
-    for(int t = 0; t < T; t++)
-      std::cout << "t: " << T*tmLQCD_params->proc_coords[0] + t
-                << "\tSum: "   << (V[t].adjoint() * V[t]).sum() 
-                << "\tTrace: " << (V[t].adjoint() * V[t]).trace() << std::endl;
-    std::cout << "\n\n" << std::endl;
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
-}
 
   MPI_Finalize();
   exit(0);

@@ -5,8 +5,8 @@
 L=4
 T=4
 
-NrXProcs = 1
-NrYProcs = 1
+NrXProcs = 2
+NrYProcs = 2
 NrZProcs = 2
 
 OMPNumThreads = 1
