@@ -837,33 +837,26 @@ void LapH::distillery::read_eigenvectors(){
   MPI_Barrier(MPI_COMM_WORLD); 
   double time1 = MPI_Wtime(), time2 = MPI_Wtime(), time3 = MPI_Wtime();
 
-  const size_t Ls = param.Ls;
-  const size_t Lt = param.Lt;
-  const size_t verbose = param.verbose;
-  const size_t number_of_eigen_vec = param.nb_ev;
+  const int Ls = param.Ls;
+  const int Lt = param.Lt;
+  const int verbose = param.verbose;
+  const int number_of_eigen_vec = param.nb_ev;
 
-  const size_t T = Lt/tmLQCD_params->nproc_t;
-  const size_t X = Ls/tmLQCD_params->nproc_x;
-  const size_t Y = Ls/tmLQCD_params->nproc_y;
-  const size_t Z = Ls/tmLQCD_params->nproc_z;
-  const size_t nproc_y = tmLQCD_params->nproc_y;
-  const size_t nproc_z = tmLQCD_params->nproc_z;
-  const size_t px = tmLQCD_params->proc_coords[1];
-  const size_t py = tmLQCD_params->proc_coords[2];
-  const size_t pz = tmLQCD_params->proc_coords[3];
+  const int T = Lt/tmLQCD_params->nproc_t;
+  const int X = Ls/tmLQCD_params->nproc_x;
+  const int Y = Ls/tmLQCD_params->nproc_y;
+  const int Z = Ls/tmLQCD_params->nproc_z;
 
-  const size_t dim_row = Ls * Ls * Ls * 3;
+  const int nproc_x = tmLQCD_params->nproc_x;
+  const int nproc_y = tmLQCD_params->nproc_y;
+  const int nproc_z = tmLQCD_params->nproc_z;
 
-  MPI_Offset my_offset;
   MPI_File fh;
-  MPI_Status status;
   int file_open_error;
 
-  int myid = 0;
+  int myid = 0, nb_ranks = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-
-  //buffer for read in
-  std::vector<std::complex<double> > eigen_vec(3*Z);
+  MPI_Comm_size(MPI_COMM_WORLD, &nb_ranks);
 
   if(myid == 0){
     if(verbose) printf("reading eigen vectors from files:\n");
@@ -871,20 +864,20 @@ void LapH::distillery::read_eigenvectors(){
     fflush(stdout);
   }
 
-  // create communicator for this timeslice amongst all processes which 
-  // also contain it
+  // create communicator to be able to read diff. timeslices on diff. procs
   MPI_Comm ts_comm;
   MPI_Comm_split(MPI_COMM_WORLD, tmLQCD_params->proc_coords[0], 
                  myid, &ts_comm );
-  int myid_t = 0;
+  int myid_t = 0, nb_procs_t = 0;
   MPI_Comm_rank(ts_comm, &myid_t);
+  MPI_Comm_size(ts_comm, &nb_procs_t);
 
   // variables for checking trace and sum of v^daggerv
   std::complex<double> trace_s(.0,.0), trace_r(.0,.0), 
                        sum_r(.0,.0), sum_s(.0,.0);
 
-  // running over all timeslices on this process
-  for(size_t t = 0; t < T; t++){
+  // running over all timeslices on this process -------------------------------
+  for(int t = 0; t < T; t++){
 
     time2 = MPI_Wtime();// TODO: Just for testing
     // setting up filename
@@ -910,36 +903,105 @@ void LapH::distillery::read_eigenvectors(){
   
       MPI_Abort(ts_comm, file_open_error);
     }
-    // reading and distributing data
+    
+    // reading and distributing data -------------------------------------------
     if(myid_t == 0) std::cout << "starting to read eigenvectors!" << std::endl;
-    for (size_t nev = 0; nev < number_of_eigen_vec; ++nev) {
-      size_t j = 0;    
       time3 = MPI_Wtime();// TODO: Just for testing
-      for(size_t x = 0; x < X; x++){
-        for(size_t y = 0; y < Y; y++){
-          my_offset = 16*(dim_row*nev + 3*((X*px + x)*Y*nproc_y + 
-                                                (Y*py + y))*Z*nproc_z + 3*Z*pz);
-          MPI_File_seek(fh, my_offset, MPI_SEEK_SET);
-          MPI_File_read_all(fh, &eigen_vec[0], 2*3*Z, MPI_DOUBLE, &status);
-          for(size_t i = 0; i < 3*Z; i++){      
-            if(param.endianness == "little")
-              (V[t])(j, nev) = eigen_vec[i];
-            else
-              (V[t])(j, nev) = swap_complex(eigen_vec[i]);
-              j++;
-          }
-        }
-      }
-      // TODO: This is merely a test
-      MPI_Barrier(MPI_COMM_WORLD);
-      if(myid == 0)
-        std::cout << "\t\tTime for reading one EV on timeslice " << real_t 
-                  << " : " << MPI_Wtime() - time3 << std::endl;
-    }
-    MPI_File_close(&fh);
+MPI_Barrier(ts_comm);
+// creating new MPI datatype ---------------------------------------------------
+MPI_Datatype newtype;
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Old Try
+
+int array_of_sizes[4] = {number_of_eigen_vec, Ls, Ls, 2*3*Ls};
+int array_of_subsizes[4] = {1, nproc_x, nproc_y, nproc_z};
+
+int distribs[4] = {MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK, MPI_DISTRIBUTE_BLOCK};
+int dargs[4] = {MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG, MPI_DISTRIBUTE_DFLT_DARG};
+
+//for(int id = 0; id < nb_ranks; id++){
+//  if(id == myid){
+//    std::cout << "I am process: " << myid << std::endl;
+//    std::cout << "t: "   << T*tmLQCD_params->proc_coords[0] + t << std::endl;
+//    std::cout << distribs[0] << " " << distribs[1] << " "
+//              << distribs[2] << " "<< distribs[3] << " "
+//              << dargs[0] << " " << dargs[1] << " " 
+//              << dargs[2] << " " << dargs[3] << " " << std::endl;
+//    std::cout << "\n\n" << std::endl;
+//  }
+//  MPI_Barrier(MPI_COMM_WORLD);
+//}
+
+MPI_Type_create_darray(nb_procs_t, myid_t, 4, array_of_sizes, distribs, dargs, array_of_subsizes, MPI_ORDER_C, MPI_DOUBLE, &newtype);
+MPI_Type_commit(&newtype);
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+// New Try
+
+
+
+
+
+
+
+
+
+
+
+
+char datarep[] = "native";
+MPI_File_set_view(fh, 0, MPI_DOUBLE, newtype, datarep, MPI_INFO_NULL);
+MPI_Barrier(ts_comm);
+
+
+// reading data ---------------------------------------------------------------
+std::vector<std::complex<double> > eigen_vec(number_of_eigen_vec*3*Z*Y*Z, std::complex<double>(0.0,0.0));
+MPI_Status status;
+MPI_File_read_all(fh, eigen_vec.data(), 2*3*Z*Y*X*number_of_eigen_vec, MPI_DOUBLE, &status);
+MPI_File_close(&fh);
+
+
+// check if there was a problem while reading data
+if(status.MPI_ERROR != MPI_SUCCESS)
+  std::cout << "\n\n\nError while reading on process: " << myid 
+            << " " << status.MPI_SOURCE << " " << status.MPI_TAG
+            << " " << status.MPI_ERROR << "\n\n" << std::endl;
+// TODO: just a rest of how many data were written
+int size_of_written_data = 0;
+MPI_Get_count(&status, MPI_DOUBLE, &size_of_written_data);
+std::cout << "process " << myid << " read " << size_of_written_data 
+          << " bytes! It should have read " << number_of_eigen_vec*2*3*Z*Y*X 
+          << std::endl;
+
+copy_to_V(eigen_vec, t);
+
+for(int id = 0; id < nb_ranks; id++){
+  if(id == myid && real_t == 0){
+    std::cout << "\n\n\t myid: " << myid << std::endl;
+    std::cout << "T: "   << T*tmLQCD_params->proc_coords[0] 
+              << "\tX: " << X*tmLQCD_params->proc_coords[1]
+              << "\tY: " << Y*tmLQCD_params->proc_coords[2] 
+              << "\tZ: " << Z*tmLQCD_params->proc_coords[3] << std::endl;
+    for(int row = 0; row < V[t].rows(); row++)
+      for(int col = 0; col < V[t].cols(); col++)
+        std::cout << V[t](row, col) << std::endl;
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
+}
+
+    // TODO: This is merely a test
+    MPI_Barrier(ts_comm);
+    if(myid == 0)
+      std::cout << "\t\tTime for reading eigenvectors on timeslice " 
+                << real_t << " : " << MPI_Wtime() - time3 << std::endl;
+    // compute the trace and sum of v^daggerv --------------
     trace_s += (V[t].adjoint() * V[t]).trace();
     sum_s += (V[t].adjoint() * V[t]).sum();
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(ts_comm);
     // TODO: This is merely a test
     if(myid == 0)
       std::cout << "\tTime for EV reading on timeslice " << real_t 
@@ -965,42 +1027,59 @@ void LapH::distillery::read_eigenvectors(){
   if(myid == 0)
     std::cout << "\tTime for eigenvector reading: " << time1 << std::endl;
 
+// TODO: Test to check if data are correctly read
+if(myid == 0) std::cout << "\n\n" << std::endl;
+for(int id = 0; id < nb_ranks; id++){
+  if(id == myid){
+    std::cout << "I am process: " << myid << std::endl;
+    std::cout << "T: "   << T*tmLQCD_params->proc_coords[0] 
+              << "\tX: " << X*tmLQCD_params->proc_coords[1]
+              << "\tY: " << Y*tmLQCD_params->proc_coords[2] 
+              << "\tZ: " << Z*tmLQCD_params->proc_coords[3] << std::endl;
+    for(int t = 0; t < T; t++)
+      std::cout << "t: " << T*tmLQCD_params->proc_coords[0] + t
+                << "\tSum: "   << (V[t].adjoint() * V[t]).sum() 
+                << "\tTrace: " << (V[t].adjoint() * V[t]).trace() << std::endl;
+    std::cout << "\n\n" << std::endl;
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
+}
+
   MPI_Finalize();
   exit(0);
 }
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
-//void LapH::distillery::copy_to_V(const std::complex<double>* const eigen_vec, 
-//                                 const int t, const int nev){
-//  const size_t Ls = param.Ls;
-//  const size_t X = Ls/tmLQCD_params->nproc_x;
-//  const size_t Y = Ls/tmLQCD_params->nproc_y;
-//  const size_t Z = Ls/tmLQCD_params->nproc_z;
-//  const size_t nproc_y = tmLQCD_params->nproc_y;
-//  const size_t nproc_z = tmLQCD_params->nproc_z;
-//  const size_t px = tmLQCD_params->proc_coords[1];
-//  const size_t py = tmLQCD_params->proc_coords[2];
-//  const size_t pz = tmLQCD_params->proc_coords[3];
-//
-//  size_t j = 0;    
-//  for(size_t x = 0; x < X; x++){
-//    for(size_t y = 0; y < Y; y++){
-//      for(size_t z = 0; z < Z; z++){
-//        for(size_t c = 0; c < 3; c++){
-//
-//          size_t i = 3*( ((X*px + x)*Y*nproc_y + (Y*py + y))*Z*nproc_z  
-//                                                             +  Z*pz + z) + c;
-//          if(param.endianness == "little")
-//            (V[t])(j, nev) = eigen_vec[i];
-//          else
-//            (V[t])(j, nev) = swap_complex(eigen_vec[i]);
-//          j++;
-//
-//        }
-//      }
-//    }
-//  }
-//}
+void LapH::distillery::copy_to_V(
+                            const std::vector<std::complex<double> >& eigen_vec, 
+                            const int t){
+  const size_t Ls = param.Ls;
+  const size_t number_of_eigen_vec = param.nb_ev;
+  const size_t X = Ls/tmLQCD_params->nproc_x;
+  const size_t Y = Ls/tmLQCD_params->nproc_y;
+  const size_t Z = Ls/tmLQCD_params->nproc_z;
+  const size_t dim_row = X*Y*Z;
+
+  for(size_t nev = 0; nev < number_of_eigen_vec; nev++){
+    size_t j = 0;    
+    for(size_t x = 0; x < X; x++){
+      for(size_t y = 0; y < Y; y++){
+        for(size_t z = 0; z < Z; z++){
+          for(size_t c = 0; c < 3; c++){
+  
+            size_t i = 3*(dim_row*nev + x*Y*Z + y*Z + z) + c;
+            if(param.endianness == "little")
+              (V[t])(j, nev) = eigen_vec.at(i);
+            else
+              (V[t])(j, nev) = swap_complex(eigen_vec[i]);
+            j++;
+  
+          }
+        }
+      }
+    }
+  }
+}
 //// -----------------------------------------------------------------------------
 //// -----------------------------------------------------------------------------
 //void LapH::distillery::read_eigenvectors(){
