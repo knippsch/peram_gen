@@ -1029,8 +1029,6 @@ void LapH::distillery::read_eigenvectors(){
   if(myid == 0)
     std::cout << "\tTime for eigenvector reading: " << time1 << std::endl;
 
-MPI_Finalize();
-exit(0);
 }
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
