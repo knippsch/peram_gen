@@ -5,9 +5,9 @@
 L=4
 T=4
 
-NrXProcs = 2
+NrXProcs = 4
 NrYProcs = 2
-NrZProcs = 2
+NrZProcs = 1
 
 OMPNumThreads = 1
 DisableIOChecks = yes
